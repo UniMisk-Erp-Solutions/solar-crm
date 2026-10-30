@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npm run build",
+  "outputDirectory": "public",
+  "functions": { "api/index.js": { "includeFiles": "dist/**", "maxDuration": 60 } },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "crons": [
+    { "path": "/api/v1/internal/cron?kind=tick", "schedule": "* * * * *" },
+    { "path": "/api/v1/internal/cron?kind=hourly", "schedule": "0 * * * *" },
+    { "path": "/api/v1/internal/cron?kind=nightly", "schedule": "30 20 * * *" }
+  ]
+}

@@ -1,0 +1,78 @@
+@import '@fontsource-variable/fraunces/standard.css';
+@import '@fontsource-variable/manrope';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Light theme only: clean white surfaces, olive green as the working colour, near-black as the small accent.
+  Values are space-separated RGB so Tailwind can apply opacity.
+*/
+:root {
+  --bg: 248 249 245;
+  --surface: 255 255 255;
+  --surface-2: 244 246 240;
+  --border: 230 233 223;
+  --border-strong: 208 214 198;
+  --fg: 22 25 21;
+  --muted: 94 102 90;
+  --subtle: 136 144 130;
+
+  --primary: 84 108 44;
+  --primary-hover: 68 89 35;
+  --primary-fg: 255 255 255;
+  --primary-soft: 239 244 228;
+  --primary-text: 62 84 31;
+
+  --accent: 24 27 23;
+  --accent-soft: 238 239 234;
+  --accent-text: 24 27 23;
+
+  --success: 47 125 62;
+  --success-soft: 231 244 233;
+  --success-text: 31 94 45;
+  --warning: 166 101 11;
+  --warning-soft: 252 241 217;
+  --warning-text: 128 76 6;
+  --danger: 180 40 32;
+  --danger-soft: 251 232 229;
+  --danger-text: 150 31 25;
+  --info: 54 94 110;
+  --info-soft: 228 238 242;
+  --info-text: 38 72 86;
+
+  --owner-system: 54 94 110;
+  --owner-distributor: 84 108 44;
+  --owner-customer: 47 125 62;
+  --owner-sales: 24 27 23;
+  --owner-management: 166 101 11;
+  color-scheme: light;
+}
+
+@layer base {
+  html { font-family: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', sans-serif; -webkit-text-size-adjust: 100%; font-feature-settings: 'cv11', 'ss01'; }
+  body { @apply bg-bg text-fg antialiased; font-size: 15px; line-height: 1.6; }
+  h1, h2, h3 { font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif; font-variation-settings: 'opsz' 48, 'SOFT' 30; @apply font-semibold tracking-tight text-fg; }
+  h4 { @apply font-bold; }
+  *:focus-visible { outline: 2px solid rgb(var(--primary)); outline-offset: 2px; border-radius: 6px; }
+  ::selection { background: rgb(var(--primary) / 0.22); }
+  * { scrollbar-width: thin; scrollbar-color: rgb(var(--border-strong)) transparent; }
+}
+
+@layer components {
+  .tabular { font-variant-numeric: tabular-nums; }
+  .card { @apply rounded-2xl border border-border bg-surface; box-shadow: 0 1px 2px rgb(22 25 21 / 0.04); }
+  .link { @apply font-semibold text-primary-text underline-offset-4 hover:underline; }
+  .page { @apply mx-auto w-full max-w-[1120px] px-5 pb-20 pt-8 sm:px-8; }
+  .skeleton { @apply relative overflow-hidden rounded-lg bg-surface-2; }
+  .skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgb(var(--border) / .7), transparent); animation: shimmer 1.4s infinite; }
+  .code { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.85em; letter-spacing: -0.01em; }
+  .display { font-family: 'Fraunces Variable', Georgia, serif; font-variation-settings: 'opsz' 72, 'SOFT' 30; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

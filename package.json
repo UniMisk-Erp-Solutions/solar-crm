@@ -1,0 +1,36 @@
+{
+  "name": "future-solar-crm",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Future Solar CRM — lead-to-order, compliance and post-sale platform for the Indian solar channel",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,yellow \"npm run dev -w @solar/api\" \"npm run dev -w @solar/web\"",
+    "build": "npm run build -w @solar/shared --if-present && npm run build -w @solar/api && npm run build -w @solar/web",
+    "test": "npm run test -w @solar/shared --if-present && npm run test -w @solar/api && npm run test -w @solar/web",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck -w @solar/shared && npm run typecheck -w @solar/api && npm run typecheck -w @solar/web",
+    "seed:sql": "tsx scripts/generate-seed-sql.ts",
+    "check:sql": "tsx scripts/check-sql.ts",
+    "i18n:extract": "tsx scripts/extract-i18n.ts",
+    "docs:rules": "tsx scripts/generate-rules-doc.ts",
+    "sql:local": "tsx scripts/validate-sql-local.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.12.0",
+    "concurrently": "^9.0.1",
+    "eslint": "^9.12.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.11.0",
+    "tsx": "^4.19.1",
+    "typescript": "~5.6.3",
+    "typescript-eslint": "^8.9.0"
+  }
+}
