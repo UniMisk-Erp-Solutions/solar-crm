@@ -1,3 +1,5 @@
+> Alternative only. The recommended setup is Vercel for the web app and Render for the API: see docs/DEPLOY.md.
+
 # Deploying to Vercel
 
 Two Vercel projects from the same GitHub repository: **solar-crm-api** (Express as one serverless function) and **solar-crm-web** (the React app).
