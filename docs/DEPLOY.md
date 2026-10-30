@@ -24,9 +24,10 @@ npm run deploy:api
 ```
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected into the function by Supabase; you do not set them.
-Do not set `DEMO_MODE`. Check: `https://<project-ref>.supabase.co/functions/v1/api/api/health` returns `{"ok":true,"mode":"live"}`.
+Do not set `DEMO_MODE`. Check: `https://<project-ref>.supabase.co/functions/v1/api/health` returns `{"ok":true,"mode":"live"}`.
 
-(The first `api` is the function name, the second is part of the API address.)
+API paths look like `https://<project-ref>.supabase.co/functions/v1/api/api/v1/auth/mode` (the first `api` is the function name, the rest is the API's own `/api/v1/...`).
+When the web address changes (custom domain, new Vercel project), update the allowed origin: `npx supabase secrets set CORS_ORIGINS=https://<web address>` (comma-separate several), no redeploy needed beyond the next function start.
 
 Automatic deploys: add the repository secrets `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF` on GitHub; `.github/workflows/deploy-api.yml` then redeploys the function on every push to `main` that changes backend code.
 
@@ -63,4 +64,4 @@ Authentication > URL Configuration: Site URL = the Vercel address; add it and `<
 - Supabase limits an Edge Function request to a few seconds of CPU time; heavy exports on very large data may need narrowing by date.
 - PDF and Excel export load `pdfkit` and `exceljs` from npm inside the function. Try one quotation PDF and one report export after the first deploy.
 - Rate limiting keeps its counters in memory per function instance, so limits are approximate.
-- This setup was run locally under Deno (the Edge Function runtime) but not yet on a live Supabase project: do the checks above after deploying.
+- Built-in checks done on the live project: health in live mode, sign-in and /auth/me, a list read, an Excel export, CORS, and the per-minute scheduler call (HTTP 200). PDF generation was verified inside the Supabase runtime with a test document.

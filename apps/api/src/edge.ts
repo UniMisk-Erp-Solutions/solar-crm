@@ -13,13 +13,14 @@ import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createApp } from './app';
 import { createDeps } from './bootstrap';
+import { loadConfig } from './config';
 import { HOURLY_CRON, bindPlatformDeps, runAllJobs } from './jobs';
 import { registeredJobs } from './services/hooks';
 import { tickClocks } from './services/clockService';
 
 // an edge function is never a dev machine: no pretty-printing worker thread, JSON logs for the Supabase log viewer
-process.env['NODE_ENV'] ||= 'production';
-const deps = createDeps();
+// (the edge runtime does not allow writing to process.env, so the setting goes in through the config)
+const deps = createDeps(loadConfig(process.env, { NODE_ENV: 'production' }));
 bindPlatformDeps(deps);
 const outer = express();
 

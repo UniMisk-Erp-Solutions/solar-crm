@@ -1,4 +1,8 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import { defineConfig } from 'tsup';
+
+const BUILTINS = new Set(builtinModules.filter((m) => !m.startsWith('_')));
 
 /**
  * One self-contained file for Supabase Edge Functions (Deno): every dependency is bundled, Node built-ins stay `node:` imports, and the
@@ -10,6 +14,11 @@ const banner = [
   "import { createRequire as __createRequire } from 'node:module';",
   "import { fileURLToPath as __fileURLToPath } from 'node:url';",
   "import { dirname as __dirname_of } from 'node:path';",
+  "import { Buffer as __Buffer } from 'node:buffer';",
+  "import __process from 'node:process';",
+  "import { setImmediate as __setImmediate, clearImmediate as __clearImmediate } from 'node:timers';",
+  // the Supabase Edge runtime has no Node globals: provide the ones the bundled libraries expect
+  'globalThis.Buffer ??= __Buffer; globalThis.process ??= __process; globalThis.global ??= globalThis; globalThis.setImmediate ??= __setImmediate; globalThis.clearImmediate ??= __clearImmediate;',
   'const require = __createRequire(import.meta.url);',
   'const __filename = __fileURLToPath(import.meta.url);',
   'const __dirname = __dirname_of(__filename);',
@@ -30,9 +39,18 @@ export default defineConfig({
   sourcemap: false,
   minify: true,
   banner: { js: banner },
+  // tsup leaves bare built-in imports ("net", "crypto" ...) in the output whatever a plugin says: add the node: prefix to the finished file
+  onSuccess: async () => {
+    const file = '../../supabase/functions/api/index.ts';
+    const names = [...BUILTINS].sort((a, b) => b.length - a.length).join('|');
+    const re = new RegExp(String.raw`((?:from|import|require\()\s*)(["'])(` + names + String.raw`)\2`, 'g');
+    writeFileSync(file, readFileSync(file, 'utf8').replace(re, (_m, pre: string, q: string, name: string) => pre + q + 'node:' + name + q));
+  },
   esbuildPlugins: [{
     name: 'npm-specifiers',
     setup(build) {
+      // the Supabase bundler wants every Node built-in written with the node: prefix (a bare "net" or "fs/promises" is rejected)
+      build.onResolve({ filter: /^[a-z_]+(\/[a-z_]+)?$/ }, (args) => (BUILTINS.has(args.path) ? { path: 'node:' + args.path, external: true } : undefined));
       build.onResolve({ filter: /^(pdfkit|exceljs)$/ }, (args) => ({ path: 'npm:' + args.path + '@' + VERSIONS[args.path as keyof typeof VERSIONS], external: true }));
     },
   }],
