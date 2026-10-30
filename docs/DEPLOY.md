@@ -43,7 +43,7 @@ Then run `supabase/sql/14_cron.sql`. It registers three jobs: every minute (cloc
 Check under Database > Cron that the three `solar-*` jobs exist, and under Edge Functions > api > Logs that calls arrive.
 
 ## 4. Web app on Vercel
-Import the repository, **Root Directory = `apps/web`** (framework Vite; settings come from `apps/web/vercel.json`). Environment variables:
+Vercel lists two apps it found (api and web). Deploy only the web app: click **Import single project** next to **web** (this sets Root Directory to `apps/web`; framework Vite). The api app is NOT deployed on Vercel, it is already running on Supabase. (If you import at the repository root instead, the root `vercel.json` builds only the web app too.) Environment variables:
 
 | Variable | Value |
 |---|---|

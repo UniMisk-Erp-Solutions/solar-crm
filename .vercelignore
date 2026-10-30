@@ -1,0 +1,6 @@
+apps/api
+supabase
+docs
+scripts
+.github
+*.md
