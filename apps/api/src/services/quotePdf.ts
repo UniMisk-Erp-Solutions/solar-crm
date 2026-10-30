@@ -3,7 +3,6 @@
  * Helvetica is the PDF base-14 font that is metric-compatible with Arial, so layouts match the Arial brand font without embedding a font file.
  * The base-14 fonts have no rupee glyph, so amounts print as "Rs. 12,34,567" (Indian digit grouping).
  */
-import PDFDocument from 'pdfkit';
 import { SEGMENT_LABEL, formatDate, groupIndian, type Finding, type Quotation } from '@solar/shared';
 
 const NAVY = '#1F3864';
@@ -34,7 +33,8 @@ const money = (n: number): string => `Rs. ${groupIndian(n, Number.isInteger(n) ?
 export const pdfSafe = (s: string | null | undefined): string =>
   (s ?? '').replace(/\u00A0/g, ' ').replace(/₹/g, 'Rs.').replace(/→/g, '>').replace(/≥/g, '>=').replace(/≤/g, '<=').replace(/[^ -~¡-ÿ–—‘’“”•]/g, '?');
 
-export function renderQuotePdf(d: QuotePdfData): Promise<Buffer> {
+export async function renderQuotePdf(d: QuotePdfData): Promise<Buffer> {
+  const { default: PDFDocument } = await import('pdfkit'); // loaded only when a PDF is made (keeps the function start-up fast)
   return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true, info: { Title: `Quotation ${d.quote.quote_no} v${d.quote.version}`, Author: d.orgName, Subject: 'Techno-commercial quotation', Creator: 'Future Solar CRM' } });
     const chunks: Buffer[] = [];

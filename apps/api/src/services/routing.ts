@@ -176,10 +176,15 @@ export async function planRouting(ctx: AppContext, input: RoutingInput): Promise
   const distributors = await ctx.db.table('distributors').all();
   const regs = await ctx.db.table('vendor_registrations').all({ party_type: 'distributor' });
   const candidates: RoutingCandidate[] = [];
+  // open leads per distributor in ONE query (not one count per distributor)
+  const openBy = new Map<string, number>();
+  if (distributors.length) {
+    for (const l of await ctx.db.table('leads').all({ distributor_id: distributors.map((x) => x.id), status: OPEN_STATUSES, deleted_at: null })) openBy.set(l.distributor_id!, (openBy.get(l.distributor_id!) ?? 0) + 1);
+  }
   for (const d of distributors) {
     const reasons = evaluateDistributor(d, regs.filter((r) => r.party_id === d.id), input);
     if (exclude.has(d.id)) reasons.push('Already had this lead and did not take it');
-    const open = await openLeadCount(ctx, d.id);
+    const open = openBy.get(d.id) ?? 0;
     const load = Math.max(0, 1 - open / loadRef);
     const fit = bandFit(input.capacity_kw, d.capacity_band_min_kw, d.capacity_band_max_kw);
     const scoreFactor = Math.max(0, Math.min(1, d.score / 100));

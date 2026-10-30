@@ -88,9 +88,10 @@ router.get('/leads', wrap(async (req, res) => {
 router.post('/leads', allow(...SALES), handle(async (ctx, req, res) => {
   const result = await createManualLead(ctx, body(leadCreateSchema, req));
   res.status(result.created ? 201 : 200);
+  const [leadView, duplicates] = await Promise.all([one(ctx, result.lead), visibleDuplicates(ctx, result.lead, result.created ? result.duplicates : undefined)]);
   return {
-    lead: await one(ctx, result.lead), created: result.created, duplicate_of: result.duplicate_of, lock_conflict: result.lock_conflict, assigned: result.assigned,
-    consent_id: result.consent_id, duplicates: await visibleDuplicates(ctx, result.lead), hints: result.hints,
+    lead: leadView, created: result.created, duplicate_of: result.duplicate_of, lock_conflict: result.lock_conflict, assigned: result.assigned,
+    consent_id: result.consent_id, duplicates, hints: result.hints,
   };
 }));
 

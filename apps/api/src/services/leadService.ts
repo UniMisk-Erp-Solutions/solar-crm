@@ -140,8 +140,9 @@ function redactEvent(e: LeadEvent): LeadEvent {
   return { ...e, detail: copy };
 }
 
-export async function visibleDuplicates(ctx: AppContext, lead: Lead): Promise<LeadDuplicateReport> {
-  const report = await findDuplicates(ctx, { mobile: lead.mobile, email: lead.email, consumer_no: lead.consumer_no, name: lead.name, pincode: lead.pincode }, { excludeLeadId: lead.id });
+export async function visibleDuplicates(ctx: AppContext, lead: Lead, precomputed?: LeadDuplicateReport): Promise<LeadDuplicateReport> {
+  // a capture has just looked for duplicates: reuse that report instead of searching again
+  const report = precomputed ?? await findDuplicates(ctx, { mobile: lead.mobile, email: lead.email, consumer_no: lead.consumer_no, name: lead.name, pincode: lead.pincode }, { excludeLeadId: lead.id });
   if (isInternal(ctx.user.role)) return report;
   const rows = report.leads.length ? await ctx.db.table('leads').all({ id: report.leads.map((m) => m.lead_id) }) : [];
   const readable = new Set<string>();

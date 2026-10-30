@@ -3,7 +3,6 @@
  * Palette: navy #1F3864, gold #BF9000, Helvetica (the built-in Arial-metric face). Amounts are written "Rs." because the
  * built-in PDF fonts have no rupee glyph.
  */
-import PDFDocument from 'pdfkit';
 import { formatDate, groupIndian, type Address, type Dispatch, type EinvoiceStatus, type InvoiceChainLink, type ProformaInvoice, type ProformaInvoiceLine } from '@solar/shared';
 
 const NAVY = '#1F3864';
@@ -18,7 +17,8 @@ const addressLines = (a: Address | null | undefined): string[] => (a ? [a.line1,
 
 type Doc = PDFKit.PDFDocument;
 
-function render(title: string, build: (doc: Doc) => void): Promise<Buffer> {
+async function render(title: string, build: (doc: Doc) => void): Promise<Buffer> {
+  const { default: PDFDocument } = await import('pdfkit'); // loaded only when a PDF is made (keeps the function start-up fast)
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true, info: { Title: title, Author: 'Future Solar CRM' } });
     const chunks: Buffer[] = [];

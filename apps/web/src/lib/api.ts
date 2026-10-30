@@ -17,6 +17,7 @@ export class ApiError extends Error {
 export interface Paged<T> { data: T[]; total: number; limit: number; offset: number }
 export interface One<T> { data: T }
 
+const REGION = (import.meta.env.VITE_API_REGION as string | undefined) ?? '';
 const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
 const PREFIX = `${BASE}/api/v1`;
 
@@ -51,6 +52,8 @@ async function toError(res: Response): Promise<ApiError> {
 
 async function request<T>(method: string, path: string, opts: ReqOpts = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json', ...(opts.headers ?? {}) };
+  // run the API function in the region of the database (Supabase Edge Functions otherwise start nearest to the visitor, far from the data)
+  if (BASE && REGION) headers['x-region'] = REGION;
   if (opts.auth !== false) {
     const token = await tokenProvider();
     if (token) headers['Authorization'] = `Bearer ${token}`;

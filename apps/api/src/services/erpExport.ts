@@ -4,7 +4,7 @@
  *   - "sap":   SAP Business One marketing-document import (Data Transfer Workbench style; one row per document line)
  * The column lists below are the contract; docs/ERP_EXPORT.md documents each column.
  */
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import { GSTIN_UNREGISTERED, isSerialTracked, type Address, type ErpDoc, type ErpFormat, type ErpLayout, type ProformaInvoice, type SalesOrder, type SalesOrderLine, type Sku } from '@solar/shared';
 import type { AppContext } from '../auth/context';
 import { scopedWhere } from '../auth/access';
@@ -165,7 +165,8 @@ const csvCell = (v: string | number): string => {
 export const toCsv = (t: ErpTable): Buffer => Buffer.from([t.columns, ...t.rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n', 'utf8');
 
 export async function toXlsx(t: ErpTable, sheet: string): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook();
+  const { default: ExcelRuntime } = await import('exceljs'); // loaded only when a workbook is built (keeps the function start-up fast)
+  const wb = new ExcelRuntime.Workbook();
   wb.creator = 'Future Solar CRM';
   const ws = wb.addWorksheet(sheet);
   ws.columns = t.columns.map((c) => ({ header: c, key: c, width: Math.min(40, Math.max(12, c.length + 4)) }));

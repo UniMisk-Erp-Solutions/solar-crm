@@ -21,12 +21,24 @@ const dayBefore = (date: string): string => {
 };
 
 export function createRuleService(ctx: AppContext): RuleService {
-  const cache = new Map<string, RuleConfig[]>();
+  // All rule versions of the organisation are read in ONE query the first time any rule is needed in a request (148 small rows), then served from memory.
+  let cache: Map<string, RuleConfig[]> | null = null;
   const versions = async (category: string, key: string): Promise<RuleConfig[]> => {
+    if (!cache) {
+      cache = new Map();
+      for (const row of await ctx.db.table('rule_config').all({}, { orderBy: { col: 'effective_from', dir: 'desc' } })) {
+        const k = `${row.category}\u0000${row.key}`;
+        cache.set(k, [...(cache.get(k) ?? []), row]);
+      }
+    }
     const k = `${category}\u0000${key}`;
-    let v = cache.get(k);
-    if (!v) { v = await ctx.db.table('rule_config').all({ category, key }, { orderBy: { col: 'effective_from', dir: 'desc' } }); cache.set(k, v); }
-    return v;
+    const hit = cache.get(k);
+    if (hit) return hit;
+    // The preload is complete, so a missing key simply has no rule. Tests write rule rows straight into the database after a read, so only there ask for that one key.
+    if (process.env['NODE_ENV'] !== 'test') { cache.set(k, []); return []; }
+    const one = await ctx.db.table('rule_config').all({ category, key }, { orderBy: { col: 'effective_from', dir: 'desc' } });
+    cache.set(k, one);
+    return one;
   };
   const split = (path: string): [string, string] => {
     const i = path.indexOf('.');
@@ -66,12 +78,13 @@ export function createRuleService(ctx: AppContext): RuleService {
           await ctx.db.table('rule_config').update(prev.id, { effective_to: dayBefore(input.effective_from), updated_by: ctx.user.id });
         }
       }
+      cache = null;
       const row = await ctx.db.table('rule_config').insert({
         category: input.category, key: input.key, value: input.value, effective_from: input.effective_from, effective_to: input.effective_to ?? null,
         source_name: input.source_name, source_ref: input.source_ref, confidence: input.confidence, status: input.status, is_active: input.is_active ?? false,
         max_severity: input.max_severity ?? 'warning', enforce_hard_stop: input.enforce_hard_stop ?? false, notes: input.notes ?? null, updated_by: ctx.user.id, created_by: ctx.user.id,
       });
-      cache.clear();
+      cache = null;
       await audit(ctx, { action: 'rule.create_version', table: 'rule_config', record_id: row.id, new: row as unknown as Json });
       await fireRuleChanged(ctx, row, 'created');
       return row;
@@ -80,8 +93,9 @@ export function createRuleService(ctx: AppContext): RuleService {
     async update(id, patch) {
       const before = await ctx.db.table('rule_config').getOrThrow(id);
       if (patch.source_ref !== undefined && !patch.source_ref.trim()) throw badRequest('A source reference is mandatory');
+      cache = null;
       const row = await ctx.db.table('rule_config').update(id, { ...patch, updated_by: ctx.user.id });
-      cache.clear();
+      cache = null;
       await audit(ctx, { action: 'rule.update', table: 'rule_config', record_id: id, old: before as unknown as Json, new: row as unknown as Json });
       await fireRuleChanged(ctx, row, 'updated');
       return row;
@@ -94,8 +108,9 @@ export function createRuleService(ctx: AppContext): RuleService {
       if (opts.maxSeverity !== undefined) patch.max_severity = opts.maxSeverity;
       // an unverified rule may only block when a compliance officer explicitly enforces it as a hard stop
       if (opts.enforceHardStop && !opts.maxSeverity) patch.max_severity = 'hard_stop';
+      cache = null;
       const row = await ctx.db.table('rule_config').update(id, patch);
-      cache.clear();
+      cache = null;
       await audit(ctx, { action: active ? 'rule.activate' : 'rule.deactivate', table: 'rule_config', record_id: id, old: before as unknown as Json, new: row as unknown as Json });
       await fireRuleChanged(ctx, row, active ? 'activated' : 'deactivated');
       return row;

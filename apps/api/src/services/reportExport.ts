@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import { ROLE_LABEL, SEGMENT_LABEL, formatDateTime, formatDate, type Kpi, type KpiUnit } from '@solar/shared';
 import type { AppContext } from '../auth/context';
 import type { DetailColumn, DetailCell, KpiDetail } from './kpi/common';
@@ -131,7 +131,8 @@ export interface BuiltReport { buffer: Buffer; filename: string; rows: number; s
 export async function buildReportWorkbook(ctx: AppContext, result: KpiResult): Promise<BuiltReport> {
   const { def, kpi, detail, run } = result;
   const f = run.filters;
-  const wb = new ExcelJS.Workbook();
+  const { default: ExcelRuntime } = await import('exceljs'); // loaded only when a workbook is built (keeps the function start-up fast)
+  const wb = new ExcelRuntime.Workbook();
   wb.creator = 'Future Solar CRM'; wb.created = ctx.now(); wb.title = def.label; wb.company = 'Future Solar';
   const generated = formatDateTime(ctx.now());
   const subtitle = `Generated ${generated} IST by ${ctx.user.full_name} (${ROLE_LABEL[ctx.user.role]}) · Period ${formatDate(f.from)} to ${formatDate(f.to)}`;

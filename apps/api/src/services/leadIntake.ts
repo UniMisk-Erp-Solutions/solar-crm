@@ -69,17 +69,24 @@ export async function captureLead(ctx: AppContext, input: CaptureInput): Promise
   }
 
   // 2/3 — geography, duplicates, DND
-  const geo = await resolveGeo(ctx, input.pincode);
   const email = input.email ? input.email.toLowerCase() : null;
   const consumerNo = normaliseConsumerNo(input.consumer_no);
-  const duplicates = await findDuplicates(ctx, { mobile: input.mobile, email, consumer_no: consumerNo, name: input.name, pincode: input.pincode ?? null });
+  // three independent look-ups at once (each is a database round trip)
+  const [geo, duplicates, dnd] = await Promise.all([
+    resolveGeo(ctx, input.pincode),
+    findDuplicates(ctx, { mobile: input.mobile, email, consumer_no: consumerNo, name: input.name, pincode: input.pincode ?? null }),
+    scrubDnd(ctx, input.mobile),
+  ]);
   const dup = await decideDuplicate(ctx, duplicates, dealer?.id ?? null);
-  const dnd = await scrubDnd(ctx, input.mobile);
 
   // 4 — the lead row (status `new`; the DB trigger / MemoryDb writes status_changed events on later transitions)
-  const owner = input.owner_id ?? (input.selfAccept ? ctx.user.id : null) ?? (await fallbackOwnerId(ctx, geo.territory_id));
+  const explicitOwner = input.owner_id ?? (input.selfAccept ? ctx.user.id : null);
+  const [fallbackOwner, temp] = await Promise.all([
+    explicitOwner ? Promise.resolve(null) : fallbackOwnerId(ctx, geo.territory_id),
+    deriveTemperature(ctx, { timeline_bucket: input.timeline_bucket ?? null, segment: input.segment ?? null }),
+  ]);
+  const owner = explicitOwner ?? fallbackOwner;
   if (!owner) throw new AppError(422, 'VALIDATION_ERROR', 'No user is available to own this lead — add a DSM or administrator first', [{ path: 'owner_id', message: 'Owner is required on every lead' }]);
-  const temp = await deriveTemperature(ctx, { timeline_bucket: input.timeline_bucket ?? null, segment: input.segment ?? null });
   const firstCheck = await acceptanceDueAt(ctx, temp.temperature, now);
   const detail: Record<string, Json> = { ...(input.provenance ?? {}), origin: input.origin, captured_at: iso(now), ...(ctx.ip ? { ip: ctx.ip } : {}), ...(ctx.userAgent ? { user_agent: ctx.userAgent } : {}) };
   let lead = await leads.insert({
@@ -94,9 +101,12 @@ export async function captureLead(ctx: AppContext, input: CaptureInput): Promise
     decision_maker_access: null, bill_captured: input.bill_captured ?? false, nurture_until: null, nurture_reason: null, lost_reason: null, notes: input.notes ?? null,
     deadline_uplift: temp.deadline_uplift, anonymised_at: null, deleted_at: null, created_by: ctx.system ? null : ctx.user.id,
   });
-  await logLeadEvent(ctx, lead.id, 'captured', `Inquiry captured — ${LEAD_SOURCE_LABEL[input.source]}`, { source: input.source, origin: input.origin, notice_version: input.consent?.notice_version ?? null, source_ref: input.source_ref ?? null });
-  await logLeadEvent(ctx, lead.id, 'dnd_scrubbed', dnd.status === 'unchecked' ? 'DND scrub unavailable — number left unchecked' : `DND scrub: ${dnd.status}${dnd.cached ? ' (recent result reused)' : ''}`, { status: dnd.status, checked_at: dnd.checked_at, source: dnd.source });
-  await audit(ctx, { action: 'lead.create', table: 'leads', record_id: lead.id, new: { id: lead.id, source: lead.source, status: lead.status, owner_id: owner, origin: input.origin } as Json });
+  // three ledger rows, written together (each is a database round trip)
+  await Promise.all([
+  logLeadEvent(ctx, lead.id, 'captured', `Inquiry captured — ${LEAD_SOURCE_LABEL[input.source]}`, { source: input.source, origin: input.origin, notice_version: input.consent?.notice_version ?? null, source_ref: input.source_ref ?? null }),
+  logLeadEvent(ctx, lead.id, 'dnd_scrubbed', dnd.status === 'unchecked' ? 'DND scrub unavailable — number left unchecked' : `DND scrub: ${dnd.status}${dnd.cached ? ' (recent result reused)' : ''}`, { status: dnd.status, checked_at: dnd.checked_at, source: dnd.source }),
+  audit(ctx, { action: 'lead.create', table: 'leads', record_id: lead.id, new: { id: lead.id, source: lead.source, status: lead.status, owner_id: owner, origin: input.origin } as Json }),
+  ]);
 
   // 5 — duplicate? hold it for a manager. otherwise validated → routed
   let assigned = false;
@@ -139,6 +149,6 @@ export async function captureLead(ctx: AppContext, input: CaptureInput): Promise
   }
   await inheritSuppression(ctx, lead);
   const scored = await recomputeLeadScore(ctx, lead.id);
-  lead = await getLead(ctx, scored.lead.id);
+  lead = scored.lead; // already the freshest row (the score step reads it and returns it updated)
   return { lead, created: true, duplicate_of: dup.duplicate_of, lock_conflict: dup.lock_conflict, duplicates, assigned, consent_id: consentId, hints: validationHints(lead) };
 }

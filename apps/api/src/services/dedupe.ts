@@ -50,16 +50,22 @@ export async function findDuplicates(ctx: AppContext, c: DedupeCandidate, opts: 
     if (!cur || KIND_RANK[kind] < KIND_RANK[cur.kind]) found.set(l.id, { lead: l, kind, similarity });
   };
 
-  for (const l of await leads.all({ mobile: c.mobile })) note(l, 'mobile', 1);
-  if (c.email) for (const l of await leads.all({ email: c.email.toLowerCase() })) note(l, 'email', 1);
+  // every lookup is independent: ask for them all at once (one round trip of waiting instead of six)
   const consumer = normaliseConsumerNo(c.consumer_no);
-  if (consumer) for (const l of await leads.all({ consumer_no: consumer })) note(l, 'consumer_no', 1);
-  if (c.pincode) {
-    for (const l of await leads.all({ pincode: c.pincode })) {
-      if (found.has(l.id)) continue;
-      const sim = nameSimilarity(c.name, l.name);
-      if (sim >= threshold) note(l, 'name_pincode', Math.round(sim * 100) / 100);
-    }
+  const [byMobile, byEmail, byConsumer, byPincode, customers] = await Promise.all([
+    leads.all({ mobile: c.mobile }),
+    c.email ? leads.all({ email: c.email.toLowerCase() }) : Promise.resolve([] as Lead[]),
+    consumer ? leads.all({ consumer_no: consumer }) : Promise.resolve([] as Lead[]),
+    c.pincode ? leads.all({ pincode: c.pincode }) : Promise.resolve([] as Lead[]),
+    findCustomerMatches(ctx, c, threshold),
+  ]);
+  for (const l of byMobile) note(l, 'mobile', 1);
+  for (const l of byEmail) note(l, 'email', 1);
+  for (const l of byConsumer) note(l, 'consumer_no', 1);
+  for (const l of byPincode) {
+    if (found.has(l.id)) continue;
+    const sim = nameSimilarity(c.name, l.name);
+    if (sim >= threshold) note(l, 'name_pincode', Math.round(sim * 100) / 100);
   }
 
   const leadMatches: LeadDuplicateMatch[] = [...found.values()]
@@ -69,7 +75,7 @@ export async function findDuplicates(ctx: AppContext, c: DedupeCandidate, opts: 
       lock_status: lead.lock_status, locked_by_dealer_id: lead.locked_by_dealer_id, created_at: lead.created_at,
     }));
 
-  return { leads: leadMatches, customers: await findCustomerMatches(ctx, c, threshold), checked_at: ctx.now().toISOString() };
+  return { leads: leadMatches, customers, checked_at: ctx.now().toISOString() };
 }
 
 async function findCustomerMatches(ctx: AppContext, c: DedupeCandidate, threshold: number): Promise<LeadCustomerMatch[]> {
@@ -84,17 +90,22 @@ async function findCustomerMatches(ctx: AppContext, c: DedupeCandidate, threshol
 
   const national = normalizeMobile(c.mobile);
   const phones = national ? [c.mobile, national, `91${national}`, `0${national}`, `+91 ${national}`] : [c.mobile];
-  for (const cu of await customers.all({ phone: phones })) add(cu, 'mobile', 1);
-  if (c.email) for (const cu of await customers.all({ email: c.email.toLowerCase() })) add(cu, 'email', 1);
   const consumer = normaliseConsumerNo(c.consumer_no);
-  if (consumer) {
-    const sites = await ctx.db.table('sites').all({ consumer_no: consumer });
-    const ids = [...new Set(sites.map((s) => s.customer_id).filter((x): x is string => !!x))];
-    if (ids.length) for (const cu of await customers.all({ id: ids })) add(cu, 'consumer_no', 1);
-  }
   const firstToken = normaliseName(c.name).split(' ').find((t) => t.length >= 3);
+  const [byPhone, byEmail, byConsumer, byName] = await Promise.all([
+    customers.all({ phone: phones }),
+    c.email ? customers.all({ email: c.email.toLowerCase() }) : Promise.resolve([] as Customer[]),
+    consumer ? ctx.db.table('sites').all({ consumer_no: consumer }).then(async (sites) => {
+      const ids = [...new Set(sites.map((s) => s.customer_id).filter((x): x is string => !!x))];
+      return ids.length ? customers.all({ id: ids }) : ([] as Customer[]);
+    }) : Promise.resolve([] as Customer[]),
+    c.pincode && firstToken ? customers.all(undefined, { search: { cols: ['legal_name', 'display_name'], text: firstToken } }) : Promise.resolve([] as Customer[]),
+  ]);
+  for (const cu of byPhone) add(cu, 'mobile', 1);
+  for (const cu of byEmail) add(cu, 'email', 1);
+  for (const cu of byConsumer) add(cu, 'consumer_no', 1);
   if (c.pincode && firstToken) {
-    for (const cu of await customers.all(undefined, { search: { cols: ['legal_name', 'display_name'], text: firstToken } })) {
+    for (const cu of byName) {
       if (out.has(cu.id)) continue;
       const samePin = cu.billing_address?.pincode === c.pincode || cu.shipping_address?.pincode === c.pincode;
       if (!samePin) continue;

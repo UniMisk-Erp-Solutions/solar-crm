@@ -37,7 +37,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): Express {
 
   app.use((req, _res, next) => { req.requestId = (req.headers['x-request-id'] as string | undefined) ?? randomUUID(); next(); });
   app.use(helmet());
-  app.use(cors({ origin: (origin, cb) => cb(null, originAllowed(deps.config.corsOrigins, origin)), credentials: true, allowedHeaders: ['authorization', 'content-type', 'x-api-key', 'x-request-id'] }));
+  app.use(cors({ origin: (origin, cb) => cb(null, originAllowed(deps.config.corsOrigins, origin)), credentials: true, allowedHeaders: ['authorization', 'content-type', 'x-api-key', 'x-request-id', 'x-region'] }));
   app.use(pinoHttp({ logger: deps.log, genReqId: (req) => (req as express.Request).requestId ?? randomUUID(), autoLogging: { ignore: (req) => req.url === '/health' } }));
   app.use(express.json({ limit: '2mb' }));
   app.use(generalLimiter(deps.config));
