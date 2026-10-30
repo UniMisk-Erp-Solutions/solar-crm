@@ -1,0 +1,6 @@
+# Supabase CLI project settings. The API is one Edge Function named "api".
+project_id = "solar-crm"
+
+[functions.api]
+# The API checks the Supabase user token itself (and serves public lead forms and webhooks), so the gateway must not require one.
+verify_jwt = false

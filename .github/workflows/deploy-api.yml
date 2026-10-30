@@ -1,0 +1,22 @@
+# Deploys the API (Supabase Edge Function "api") whenever the backend code changes on main.
+# Repository secrets needed: SUPABASE_ACCESS_TOKEN (supabase.com > Account > Access Tokens) and SUPABASE_PROJECT_REF.
+name: Deploy API to Supabase
+on:
+  push:
+    branches: [main]
+    paths: ['apps/api/**', 'packages/shared/**', 'supabase/config.toml']
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - run: npm ci
+      - run: npm run build:edge
+      - run: supabase functions deploy api --no-verify-jwt --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}

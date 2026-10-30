@@ -26,6 +26,7 @@ These files build the Future Solar CRM database on **Supabase Postgres**. You ru
 | 11 | `11_storage_buckets.sql` | Five private Storage buckets and their policies. |
 | 12 | `12_seed_reference.sql` | **Generated** (`npm run seed:sql`). Organization, DISCOMs, rules, templates, compliance calendar, verify register, gates, approval rules, forms, Gujarat pincodes and sales territories. |
 | 13 | `13_first_admin.sql` | Creates the CRM profile (role `admin`) of `admin@mistryandshah.com` from Supabase Auth. |
+| 14 | `14_cron.sql` | The scheduler (pg_cron): clock engine every minute, breach watch hourly, nightly jobs at 02:00 IST. Run it **after** the API function is deployed and after storing the two vault secrets described at the top of the file (see docs/DEPLOY.md). |
 
 ## Creating the first admin (file 13)
 
@@ -36,9 +37,7 @@ These files build the Future Solar CRM database on **Supabase Postgres**. You ru
 
 ## Connecting the API
 
-Put these in `apps/api/.env` (never commit): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (Dashboard -> Project Settings -> API ->
-`service_role`; treat it like a password and rotate it if it ever leaks), and leave `DEMO_MODE` unset. The web app only needs the
-URL and the anon key (`apps/web/.env.local`).
+The API is a Supabase Edge Function; see docs/DEPLOY.md. It receives SUPABASE_URL and the service_role key from Supabase itself. The web app needs only the URL, the anon key and the function address (apps/web/.env.local).
 
 ## Quick checks after running 01-13
 

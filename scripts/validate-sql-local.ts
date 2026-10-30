@@ -31,6 +31,17 @@ const SUPABASE_STANDINS = `
   alter table storage.objects enable row level security;
   create or replace function storage.foldername(name text) returns text[] language sql immutable as $f$ select string_to_array(name, '/') $f$;
   grant usage on schema public, auth, storage to anon, authenticated, service_role;
+  -- stand-ins for the Supabase scheduler pieces used by 14_cron.sql (pg_cron, pg_net, vault)
+  create schema if not exists cron; create schema if not exists net; create schema if not exists vault; create schema if not exists extensions;
+  create table if not exists cron.job (jobname text primary key, schedule text not null, command text not null);
+  create or replace function cron.schedule(p_name text, p_schedule text, p_command text) returns bigint language sql as $f$ insert into cron.job values (p_name, p_schedule, p_command) on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command returning 1::bigint $f$;
+  create or replace function net.http_get(url text, headers jsonb default '{}', timeout_milliseconds int default 5000) returns bigint language sql as $f$ select 1::bigint $f$;
+  create table if not exists vault.secrets (id uuid primary key default gen_random_uuid(), name text unique, secret text);
+  create or replace view vault.decrypted_secrets as select id, name, secret as decrypted_secret from vault.secrets;
+  insert into vault.secrets (name, secret) values ('project_url', 'https://example.supabase.co'), ('cron_secret', 'local-test') on conflict do nothing;
+  grant usage on schema cron, net, vault, extensions to postgres, service_role;
+  grant all on all tables in schema cron, vault to postgres;
+  grant execute on all functions in schema cron, net to postgres;
 `;
 
 /** Statements are split on top-level semicolons, respecting $$ blocks, quotes and comments. */

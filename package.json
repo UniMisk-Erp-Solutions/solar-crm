@@ -21,7 +21,9 @@
     "check:sql": "tsx scripts/check-sql.ts",
     "i18n:extract": "tsx scripts/extract-i18n.ts",
     "docs:rules": "tsx scripts/generate-rules-doc.ts",
-    "sql:local": "tsx scripts/validate-sql-local.ts"
+    "sql:local": "tsx scripts/validate-sql-local.ts",
+    "build:edge": "npm run build:edge -w @solar/api",
+    "deploy:api": "npm run build:edge && npx supabase functions deploy api --no-verify-jwt"
   },
   "devDependencies": {
     "@eslint/js": "^9.12.0",

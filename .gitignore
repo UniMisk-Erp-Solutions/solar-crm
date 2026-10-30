@@ -10,3 +10,7 @@ playwright-report/
 test-results/
 .vite/
 .mcp.json
+
+# built from apps/api by `npm run build:edge`; CI and `npm run deploy:api` regenerate it
+supabase/functions/api/index.ts
+supabase/.temp/

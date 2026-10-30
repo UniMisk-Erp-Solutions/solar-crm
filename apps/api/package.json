@@ -8,7 +8,8 @@
     "build": "tsup",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "build:edge": "tsup --config tsup.edge.config.ts"
   },
   "dependencies": {
     "@solar/shared": "*",
