@@ -4,7 +4,6 @@
  *   - "sap":   SAP Business One marketing-document import (Data Transfer Workbench style; one row per document line)
  * The column lists below are the contract; docs/ERP_EXPORT.md documents each column.
  */
-import type ExcelJS from 'exceljs';
 import { GSTIN_UNREGISTERED, isSerialTracked, type Address, type ErpDoc, type ErpFormat, type ErpLayout, type ProformaInvoice, type SalesOrder, type SalesOrderLine, type Sku } from '@solar/shared';
 import type { AppContext } from '../auth/context';
 import { scopedWhere } from '../auth/access';

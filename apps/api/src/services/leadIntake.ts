@@ -16,7 +16,7 @@ import { inheritSuppression, recordConsent } from './consentServiceLedger';
 import { decideDuplicate, findDuplicates, normaliseConsumerNo } from './dedupe';
 import { acceptLead, routeLead } from './leadServiceAcceptance';
 import { acceptanceDueAt, workingMinutesFrom } from './leadServiceSettings';
-import { dsmIds, fallbackOwnerId, getLead, inferSegment, logLeadEvent, notifyStaff, saveLead } from './leadServiceStore';
+import { dsmIds, fallbackOwnerId, inferSegment, logLeadEvent, notifyStaff, saveLead } from './leadServiceStore';
 import { resolveGeo } from './routing';
 import { deriveTemperature, recomputeLeadScore } from './scoring';
 
