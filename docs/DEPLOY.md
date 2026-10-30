@@ -43,15 +43,9 @@ Then run `supabase/sql/14_cron.sql`. It registers three jobs: every minute (cloc
 Check under Database > Cron that the three `solar-*` jobs exist, and under Edge Functions > api > Logs that calls arrive.
 
 ## 4. Web app on Vercel
-Vercel lists two apps it found (api and web). Deploy only the web app: click **Import single project** next to **web** (this sets Root Directory to `apps/web`; framework Vite). The api app is NOT deployed on Vercel, it is already running on Supabase. (If you import at the repository root instead, the root `vercel.json` builds only the web app too.) Environment variables:
-
-| Variable | Value |
-|---|---|
-| `VITE_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
-| `VITE_SUPABASE_ANON_KEY` | the anon (public) key |
-| `VITE_API_URL` | `https://<project-ref>.supabase.co/functions/v1/api` |
-
-Redeploy after changing a variable (they are built in).
+Nothing to configure. `apps/web/.env.production` holds the three PUBLIC values (Supabase URL, anon key, function address), so a Vercel project needs no environment variables.
+Import the repository, click **Import single project** next to **web** (Root Directory `apps/web`, framework Vite), ignore the optional Supabase integration box, and press **Deploy**.
+The API accepts browsers from any `https://*.vercel.app` address and `http://localhost:5173` (the `CORS_ORIGINS` secret); to restrict it to one address later: `npx supabase secrets set CORS_ORIGINS=https://<your address>`.
 
 ## 5. Supabase Auth
 Authentication > URL Configuration: Site URL = the Vercel address; add it and `<vercel address>/login` to Redirect URLs.

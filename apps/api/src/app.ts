@@ -13,6 +13,16 @@ import { createAuthRouter } from './routes/auth.routes';
 import { createFilesRouter } from './routes/files.routes';
 import { createPublicRouter } from './routes/public.routes';
 
+/** CORS allow-list: exact origins, or one wildcard label such as https://*.vercel.app (the * matches a single host label). */
+export function originAllowed(list: string[], origin: string | undefined): boolean {
+  if (!origin) return true; // same-origin or non-browser callers (cron, curl)
+  return list.some((entry) => {
+    if (!entry.includes('*')) return entry === origin;
+    const re = new RegExp('^' + entry.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+') + '$', 'i');
+    return re.test(origin);
+  });
+}
+
 export interface CreateAppOptions {
   /** Routers needing a signed-in user (mounted under /api/v1 after authentication). Defaults to routes/index. */
   authed?: Router[];
@@ -27,7 +37,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): Express {
 
   app.use((req, _res, next) => { req.requestId = (req.headers['x-request-id'] as string | undefined) ?? randomUUID(); next(); });
   app.use(helmet());
-  app.use(cors({ origin: deps.config.corsOrigins, credentials: true, allowedHeaders: ['authorization', 'content-type', 'x-api-key', 'x-request-id'] }));
+  app.use(cors({ origin: (origin, cb) => cb(null, originAllowed(deps.config.corsOrigins, origin)), credentials: true, allowedHeaders: ['authorization', 'content-type', 'x-api-key', 'x-request-id'] }));
   app.use(pinoHttp({ logger: deps.log, genReqId: (req) => (req as express.Request).requestId ?? randomUUID(), autoLogging: { ignore: (req) => req.url === '/health' } }));
   app.use(express.json({ limit: '2mb' }));
   app.use(generalLimiter(deps.config));
