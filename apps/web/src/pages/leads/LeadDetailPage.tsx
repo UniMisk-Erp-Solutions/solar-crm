@@ -17,6 +17,7 @@ import { useAction, useGet, useList } from '@/lib/query';
 import { RecordConsentModal } from '@/components/domain/RecordConsentModal';
 import { AcceptanceTracker } from './AcceptanceTracker';
 import { AssignControl } from './AssignControl';
+import { RequestsCard } from './RequestsCard';
 import { LogContactModal } from './LogContactModal';
 import { NextActionCard } from './NextActionCard';
 import { QualificationCard } from './QualificationCard';
@@ -40,7 +41,7 @@ function Detail({ detail }: { detail: LeadDetail }) {
   const [dialog, setDialog] = useState<'nurture' | 'lost' | 'reject' | 'withdraw' | 'consent' | null>(null);
   const accept = useAction<void, LeadListItem>({ path: `/leads/${lead.id}/accept`, invalidate: ['/leads', '/followups'], successMessage: t('leads.accepted', 'Inquiry accepted') });
   const note = lead.status === 'assigned' || lead.status === 'unassigned' ? acceptanceFromEvents(detail.events) : null;
-  const awaiting = lead.status === 'assigned';
+  const awaiting = lead.status === 'assigned' && !!lead.distributor_id;
   const qualified = lead.status === 'qualified' || detail.can_convert;
   // once a lead has moved on (opportunity, won, lost, merged) the lead-stage actions no longer apply
   const moved = ['opportunity', 'won', 'lost', 'merged', 'duplicate'].includes(lead.status);
@@ -49,6 +50,7 @@ function Detail({ detail }: { detail: LeadDetail }) {
   const step = (() => {
     switch (nba.code) {
       case 'accept': return { label: t('leads.accept', 'Accept'), run: () => accept.mutate(), loading: accept.isPending };
+      case 'choose': return { label: t('leads.req.choose', 'Choose distributors'), run: () => setAssignOpen(true) };
       case 'assign': case 'route': case 'review_duplicate': return { label: t('leads.assign.button', 'Assign'), run: () => setAssignOpen(true) };
       case 'contact': case 'followup_overdue': case 'reengage': return { label: t('leads.d.logContact', 'Log a contact'), run: () => setLogOpen(true) };
       case 'qualify': case 'requirement': return { label: t('leads.d.qualify', 'Qualify this inquiry'), run: () => document.getElementById('qualification')?.scrollIntoView?.({ behavior: 'smooth' }) };
@@ -98,10 +100,12 @@ function Detail({ detail }: { detail: LeadDetail }) {
             {step && !moved && <Button loading={step.loading} onClick={step.run}>{step.label}</Button>}
             {lead.status === 'opportunity' && <Button onClick={() => nav('/site?tab=opportunities')}>{t('leads.d.openOpp', 'Open the opportunity')}</Button>}
           </div>
-          {assignOpen && <AssignControl leadId={lead.id} onDone={() => setAssignOpen(false)} />}
+          {(assignOpen || nba.code === 'choose') && <AssignControl leadId={lead.id} onDone={() => setAssignOpen(false)} />}
           {lead.status === 'unassigned' && !assignOpen && <p className="text-sm text-muted">{t('leads.d.noDist', 'No distributor is available — the DSM has been alerted. You can assign one yourself.')}</p>}
         </CardBody>
       </Card>
+
+      <RequestsCard detail={detail} />
 
       {(lead.assigned_at || lead.status === 'unassigned') && (
         <Card>

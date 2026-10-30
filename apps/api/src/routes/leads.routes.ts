@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import {
-  LEAD_CLOSED_STATUSES, LEAD_KANBAN_COLUMNS, followupListQuerySchema, leadAcceptSchema, leadConsentAddSchema, leadConsentWithdrawSchema, leadContactInputSchema, leadCreateSchema,
+  LEAD_CLOSED_STATUSES, LEAD_KANBAN_COLUMNS, followupListQuerySchema, leadAcceptSchema, leadRequestsSchema, leadConsentAddSchema, leadConsentWithdrawSchema, leadContactInputSchema, leadCreateSchema,
   leadFollowupCompleteSchema, leadFollowupCreateSchema, leadListQuerySchema, leadLockOverrideDecisionSchema, leadLockOverrideRequestSchema, leadLostSchema, leadMergeSchema,
   leadMessageSendSchema, leadNurtureSchema, leadPatchSchema, leadQualificationSchema, leadReassignSchema, leadRejectSchema, leadSourceKeyCreateSchema, leadSourceKeyPatchSchema,
   leadUnmaskSchema, maskMobile, sha256Hex, type Json, type Lead, type LeadKanbanView, type SourceApiKey,
@@ -21,6 +21,7 @@ import { completeFollowup, listFollowups, scheduleFollowup } from '../services/f
 import {
   buildConsentSummary, createManualLead, decorateLeads, getLeadDetail, leadScoreView, leadTimeline, markLeadLost, nurtureLead, slaIdSets, unmaskLead, updateLead, visibleDuplicates,
 } from '../services/leadService';
+import { suggestDistributors, sendRequests } from '../services/leadServiceRequests';
 import { acceptLead, reassignLead, rejectLead } from '../services/leadServiceAcceptance';
 import { decideLockOverride, mergeLeads, requestLockOverride } from '../services/leadServiceDuplicates';
 import { logContact, qualifyLead } from '../services/leadServiceStage2';
@@ -122,14 +123,28 @@ router.post('/leads/:id/unmask', allow(...CAN_UNMASK), handle(async (ctx, req) =
 /* ───────────── acceptance loop ───────────── */
 router.post('/leads/:id/accept', allow('dsm', 'sales_manager', 'regional_head', 'distributor_user', 'dealer_user'), handle(async (ctx, req) => {
   await readable(ctx, param(req, 'id'));
-  return one(ctx, await acceptLead(ctx, param(req, 'id'), { note: body(leadAcceptSchema, req).note }));
+  const input = body(leadAcceptSchema, req);
+  return one(ctx, await acceptLead(ctx, param(req, 'id'), { note: input.note, distributor_id: input.distributor_id }));
 }));
 
 router.post('/leads/:id/reject', allow('dsm', 'sales_manager', 'regional_head', 'distributor_user', 'dealer_user'), handle(async (ctx, req) => {
   await readable(ctx, param(req, 'id'));
-  const r = await rejectLead(ctx, param(req, 'id'), body(leadRejectSchema, req).reason);
+  const input = body(leadRejectSchema, req);
+  const r = await rejectLead(ctx, param(req, 'id'), input.reason, input.distributor_id);
   // after a rejection an external user may no longer be allowed to see the lead — return what they can
   return { lead: ctx.user.role === 'distributor_user' || ctx.user.role === 'dealer_user' ? { id: r.lead.id, status: r.lead.status } : await one(ctx, r.lead), reassigned: r.reassigned };
+}));
+
+/** The ranked distributors for this lead (best first, with the reasons against the others). Nothing is written. */
+router.get('/leads/:id/suggestions', allow(...SALES), handle(async (ctx, req) => {
+  await readable(ctx, param(req, 'id'));
+  return suggestDistributors(ctx, param(req, 'id'));
+}));
+
+/** Send the request to the distributors a person picked. The first to accept gets the lead. */
+router.post('/leads/:id/requests', allow(...SALES), handle(async (ctx, req) => {
+  await readable(ctx, param(req, 'id'));
+  return one(ctx, await sendRequests(ctx, param(req, 'id'), body(leadRequestsSchema, req)));
 }));
 
 router.post('/leads/:id/reassign', allow(...MANAGERS), handle(async (ctx, req) => {

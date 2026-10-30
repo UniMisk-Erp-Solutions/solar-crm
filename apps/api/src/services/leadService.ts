@@ -16,6 +16,7 @@ import { audit } from '../lib/audit';
 import { istMidnight, todayIst } from '../lib/time';
 import { evaluateOutbound, getDndMaxAgeDays, getWindowHours, lastInboundWhatsAppAt, activeSuppressionUntil, dndFreshness, windowClosesAt, isWindowOpen } from './consentService';
 import { findDuplicates } from './dedupe';
+import { requestViews } from './leadServiceRequests';
 import { captureLead, validationHints, type CaptureResult } from './leadIntake';
 import { qualificationGaps } from './leadServiceStage2';
 import { cancelFollowups, planNextAction, refreshLeadFollowup, rescheduleNextFollowup, assertFollowupDate } from './followupService';
@@ -57,15 +58,22 @@ export async function decorateLeads(ctx: AppContext, rows: Lead[]): Promise<Lead
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))];
-  const [owners, dists, dealers, clocks] = await Promise.all([
+  const waiting = rows.filter((r) => r.status === 'assigned' && !r.distributor_id).map((r) => r.id);
+  const [owners, dists, dealers, clocks, asked] = await Promise.all([
     ctx.db.table('profiles').all({ id: uniq(rows.map((r) => r.owner_id)) }), ctx.db.table('distributors').all({ id: uniq(rows.map((r) => r.distributor_id)) }),
     ctx.db.table('dealers').all({ id: uniq(rows.map((r) => r.dealer_id)) }), ctx.db.table('clocks').all({ entity_type: 'lead', entity_id: ids, resolved_at: null }),
+    waiting.length ? ctx.db.table('lead_assignments').all({ lead_id: waiting, status: 'pending' }) : Promise.resolve([] as LeadAssignment[]),
   ]);
+  const askedDists = asked.length ? await ctx.db.table('distributors').all({ id: uniq(asked.map((a) => a.distributor_id)) }) : [];
+  const askedLabel = (leadId: string): string | null => {
+    const names = asked.filter((a) => a.lead_id === leadId).map((a) => askedDists.find((d) => d.id === a.distributor_id)?.legal_name).filter((n): n is string => !!n);
+    return names.length ? `Asked: ${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''}` : null;
+  };
   const now = ctx.now();
   return rows.map((r) => {
     const masked = canSeeMobile(ctx.user.role) ? r : { ...r, mobile: maskMobile(r.mobile), email: r.email ? maskEmail(r.email) : r.email };
     return {
-      ...masked, owner_name: owners.find((o) => o.id === r.owner_id)?.full_name ?? null, distributor_name: dists.find((d) => d.id === r.distributor_id)?.legal_name ?? null,
+      ...masked, owner_name: owners.find((o) => o.id === r.owner_id)?.full_name ?? null, distributor_name: dists.find((d) => d.id === r.distributor_id)?.legal_name ?? (r.status === 'assigned' && !r.distributor_id ? askedLabel(r.id) : null),
       dealer_name: dealers.find((d) => d.id === r.dealer_id)?.legal_name ?? null, sla_state: slaStateOf(clocks.filter((c) => c.entity_id === r.id), now),
       followup_overdue: !!r.next_followup_at && new Date(r.next_followup_at).getTime() < now.getTime() && LEAD_ACTIVE_STATUSES.includes(r.status),
     };
@@ -98,11 +106,16 @@ export function nextBestAction(lead: Lead, gaps: string[], now: Date): LeadNextB
   if (overdue) return { code: 'followup_overdue', label: `Follow-up overdue: ${lead.next_action ?? 'contact the customer'}`, due_at: due, urgent: true };
   const a = (code: string, label: string, dueAt: string | null = due, urgent = false): LeadNextBestAction => ({ code, label, due_at: dueAt, urgent });
   switch (lead.status) {
-    case 'new': case 'validated': return a('route', 'Routing in progress', null);
+    case 'new': return a('route', 'Routing in progress', null);
+    case 'validated': return lead.next_action?.startsWith('Choose which distributors')
+      ? a('choose', 'Choose which distributors to send the request to', null, true)
+      : a('route', 'Routing in progress', null);
     case 'duplicate': return a('review_duplicate', lead.lock_status === 'override_pending' ? 'Sales Manager to decide the lock override' : 'Review the duplicate: merge it or approve it as independent', due, true);
     case 'merged': return a('none', 'Merged into another lead', null);
     case 'unassigned': return a('assign', 'Assign a distributor or reassign the territory', due, true);
-    case 'assigned': return a('accept', 'Accept or reject this lead within the SLA', lead.sla_due_at, true);
+    case 'assigned': return lead.distributor_id
+      ? a('accept', 'Accept or reject this lead within the SLA', lead.sla_due_at, true)
+      : a('wait_requests', 'Waiting for a distributor to accept — record who accepted first', lead.sla_due_at, true);
     case 'accepted': return a('contact', 'Make the initial contact with the customer', due, lead.temperature === 'hot');
     case 'contacted': return a('qualify', gaps.length ? `Complete the qualification call — still needed: ${gaps.join(', ')}` : 'Record the qualification call');
     case 'qualified': return a('site_visit', lead.segment ? 'Schedule the site visit, then convert to an opportunity' : 'Choose the segment, then schedule the site visit');
@@ -152,7 +165,11 @@ export async function visibleDuplicates(ctx: AppContext, lead: Lead, precomputed
 }
 
 export async function getLeadDetail(ctx: AppContext, id: string): Promise<LeadDetail> {
-  const lead = await getLead(ctx, id);
+  let lead = await getLead(ctx, id);
+  // a call that was saved with every answer recorded is a finished qualification, even if an older rule left the lead on "contacted"
+  if (lead.status === 'contacted' && lead.requirement_text?.trim() && (await qualificationGaps(ctx, lead)).length === 0) {
+    lead = (await saveLead(ctx, id, { status: 'qualified', last_action: 'Qualification call completed', last_action_at: ctx.now().toISOString(), next_action: 'Schedule the site visit' })).after;
+  }
   const [events, consents, assignments, followups, contacts, scores, clocks, opps, dups, owner, dist, dealer, territory] = await Promise.all([
     ctx.db.table('lead_events').all({ lead_id: id }, { orderBy: { col: 'created_at', dir: 'desc' } }),
     ctx.db.table('lead_consents').all({ lead_id: id }, { orderBy: { col: 'granted_at', dir: 'desc' } }),
@@ -176,7 +193,7 @@ export async function getLeadDetail(ctx: AppContext, id: string): Promise<LeadDe
   return {
     lead: { ...shown, owner_name: owner?.full_name ?? null, distributor_name: dist?.legal_name ?? null, dealer_name: dealer?.legal_name ?? null, territory_name: territory?.name ?? null },
     events: external ? events.map(redactEvent) : events, consents, consent_summary: await buildConsentSummary(ctx, lead, consents),
-    assignments: external ? assignments.filter(own).map((a) => ({ ...a, score_snapshot: {} })) : assignments, followups, contact_logs: contacts, score: scores.at(-1) ?? null,
+    assignments: external ? assignments.filter(own).map((a) => ({ ...a, score_snapshot: {} })) : assignments, requests: external ? [] : await requestViews(ctx, assignments), followups, contact_logs: contacts, score: scores.at(-1) ?? null,
     clocks: clocks.filter((c) => !c.resolved_at), duplicates: dups, customer_id: lead.customer_id, site_id: lead.site_id, opportunity_ids: opps.map((o) => o.id),
     next_best_action: nextBestAction(lead, gaps, ctx.now()), convert_blockers: blockers, can_convert: blockers.length === 0, validation_hints: validationHints(lead),
     first_response_minutes: lead.first_contacted_at ? Math.max(0, Math.round((new Date(lead.first_contacted_at).getTime() - new Date(lead.created_at).getTime()) / 60000)) : null,

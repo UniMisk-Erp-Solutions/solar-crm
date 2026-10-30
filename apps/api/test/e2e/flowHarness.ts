@@ -57,7 +57,10 @@ export function createFlowEnv(start: Date = START): FlowEnv {
   const now = () => t;
   const config = loadConfig({}, { NODE_ENV: 'test', DEMO_MODE: true, RUN_JOBS: false, LOG_LEVEL: 'silent' });
   const log = createLogger('silent');
-  const db = new MemoryDb(buildSeed(start), { now });
+  // the Stage 1 flow tests describe the automatic hand-over (best match assigned at once); the select-mode flow has its own tests (test/leads/requests.test.ts)
+  const seed = buildSeed(start);
+  seed.rule_config = (seed.rule_config ?? []).map((r) => (r.category === 'routing' && r.key === 'mode' ? { ...r, value: 'auto' } : r));
+  const db = new MemoryDb(seed, { now });
   const providers = buildProviders(config, db, log);
   const deps: AppDeps = { config, db, providers, log, now };
   const app = createApp(deps);

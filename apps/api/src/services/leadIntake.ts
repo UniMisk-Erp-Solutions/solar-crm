@@ -15,7 +15,7 @@ import { scrubDnd } from './consentService';
 import { inheritSuppression, recordConsent } from './consentServiceLedger';
 import { decideDuplicate, findDuplicates, normaliseConsumerNo } from './dedupe';
 import { acceptLead, routeLead } from './leadServiceAcceptance';
-import { acceptanceDueAt, workingMinutesFrom } from './leadServiceSettings';
+import { acceptanceDueAt, ruleOr, workingMinutesFrom } from './leadServiceSettings';
 import { dsmIds, fallbackOwnerId, inferSegment, logLeadEvent, notifyStaff, saveLead } from './leadServiceStore';
 import { resolveGeo } from './routing';
 import { deriveTemperature, recomputeLeadScore } from './scoring';
@@ -132,7 +132,13 @@ export async function captureLead(ctx: AppContext, input: CaptureInput): Promise
     }
     // 6 — routing: a distributor/dealer entering their own lead keeps it; everyone else goes through the engine
     const own = (input.selfAccept || input.distributor_id) && !dealer && distributorId ? { forceDistributorId: distributorId } : {};
-    const routed = await routeLead(ctx, lead, { step: 'auto', reason: input.selfAccept ? 'Entered by the distributor’s own user' : input.distributor_id ? `Entered for a named distributor (${LEAD_SOURCE_LABEL[input.source]})` : `Captured via ${LEAD_SOURCE_LABEL[input.source]}`, ownerId: input.selfAccept ? ctx.user.id : input.owner_id, ...own });
+    const selectMode = !('forceDistributorId' in own) && !dealer && (await ruleOr<string>(ctx, 'routing.mode', 'auto')) === 'select';
+    if (selectMode) {
+      // select mode: nothing is sent yet. The lead waits, with the ranked suggestions, for a person to choose whom to ask.
+      lead = (await saveLead(ctx, lead.id, { next_action: 'Choose which distributors to send the request to', last_action: 'Validated — waiting for the request to be sent' })).after;
+      await logLeadEvent(ctx, lead.id, 'awaiting_selection', 'Distributors suggested — choose whom to send the request to', {});
+    }
+    const routed = selectMode ? { lead, assigned: false, decision: null } : await routeLead(ctx, lead, { step: 'auto', reason: input.selfAccept ? 'Entered by the distributor’s own user' : input.distributor_id ? `Entered for a named distributor (${LEAD_SOURCE_LABEL[input.source]})` : `Captured via ${LEAD_SOURCE_LABEL[input.source]}`, ownerId: input.selfAccept ? ctx.user.id : input.owner_id, ...own });
     lead = routed.lead;
     assigned = routed.assigned;
     if (assigned && input.selfAccept) lead = await acceptLead(ctx, lead.id, { implicit: true });

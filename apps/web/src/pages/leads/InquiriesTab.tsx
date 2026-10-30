@@ -57,6 +57,10 @@ export function InquiriesTab({ newOpen, setNewOpen }: { newOpen: boolean; setNew
       key: 'actions', header: <span className="sr-only">{t('common.actions', 'Actions')}</span>, align: 'right',
       cell: (l) => {
         const s = stageOf(l);
+        if (l.status === 'assigned' && !l.distributor_id) {
+          // the request went to several distributors: the answers are recorded on the inquiry page
+          return <div className="flex justify-end" onClick={(e) => e.stopPropagation()}><Button size="sm" variant="soft" aria-label={`${t('leads.req.record', 'Record answers')} ${l.name}`} onClick={() => nav(`/leads/${l.id}`)}>{t('leads.req.record', 'Record answers')}</Button></div>;
+        }
         if (l.status === 'assigned') {
           return (
             <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
@@ -65,7 +69,7 @@ export function InquiriesTab({ newOpen, setNewOpen }: { newOpen: boolean; setNew
             </div>
           );
         }
-        if (s.step === '6') return <div className="flex justify-end" onClick={(e) => e.stopPropagation()}><Button size="sm" variant="accent" aria-label={`${t('leads.assign.button', 'Assign')} ${l.name}`} onClick={() => setAssigning(l)}>{t('leads.assign.button', 'Assign')}</Button></div>;
+        if (s.step === '6' || l.status === 'validated') return <div className="flex justify-end" onClick={(e) => e.stopPropagation()}><Button size="sm" variant="accent" aria-label={`${t('leads.assign.button', 'Assign')} ${l.name}`} onClick={() => setAssigning(l)}>{t('leads.assign.button', 'Assign')}</Button></div>;
         return null;
       },
     },
@@ -95,7 +99,7 @@ export function InquiriesTab({ newOpen, setNewOpen }: { newOpen: boolean; setNew
       </Card>
 
       <NewInquiryDrawer open={newOpen} onClose={() => setNewOpen(false)} />
-      <Modal open={!!assigning} onClose={() => setAssigning(null)} size="md" title={t('leads.assign.title', '6 · Reassign territory')} description={assigning ? `${assigning.name} — no eligible distributor was found automatically. Choose one.` : undefined}>
+      <Modal open={!!assigning} onClose={() => setAssigning(null)} size="xl" title={t('leads.assign.title', 'Choose distributors')} description={assigning ? `${assigning.name} — pick whom to send the request to.` : undefined}>
         {assigning && <AssignControl leadId={assigning.id} onDone={() => setAssigning(null)} />}
       </Modal>
       <Modal

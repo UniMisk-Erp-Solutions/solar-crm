@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, CircleAlert, Globe, Megaphone, MessageCircle, Phone, TriangleAlert, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm, type Resolver } from 'react-hook-form';
+import { DistributorPicker } from './DistributorPicker';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { CUSTOMER_TYPES, EMAIL_RE, PINCODE_RE, TIMELINE_BUCKETS, formatDateTime, formatDuration, normalizeMobile, toE164, type LeadDetail, type LeadListItem } from '@solar/shared';
@@ -226,6 +227,21 @@ function MatchResult({ leadId }: { leadId: string }) {
       <Callout tone="warning" title="2 · This looks like an inquiry we already have">
         It was saved but not assigned, so the customer is not contacted twice. <Link className="underline" to={`/leads/${lead.id}`}>Open it</Link> to merge it or release it.
       </Callout>
+    );
+  }
+  // select mode: nothing is sent yet; the ranked suggestions are shown to choose from, then the request goes to whoever is ticked
+  if (lead.status === 'validated' || lead.status === 'unassigned') {
+    return <DistributorPicker leadId={lead.id} onSent={() => void q.refetch()} />;
+  }
+  if (lead.status === 'assigned' && !lead.distributor_id) {
+    const asked = (d.requests ?? []).filter((r) => r.status === 'pending');
+    const clock = d.clocks.find((c) => c.clock_type === 'lead_acceptance');
+    return (
+      <section aria-label="Requests sent" className="space-y-5">
+        <p className="flex items-center gap-2 text-sm font-semibold text-success-text"><Check className="h-4 w-4" aria-hidden />Request sent to {asked.length} distributor{asked.length === 1 ? '' : 's'}</p>
+        <ul className="divide-y divide-border rounded-xl border border-border">{asked.map((r) => <li key={r.id} className="px-4 py-3 font-semibold">{r.distributor_name}</li>)}</ul>
+        <p className="text-[15px]">The first to accept gets the lead{clock ? <> — answer due by <b className="font-semibold">{formatDateTime(clock.due_at)}</b></> : null}. Record their answer on the inquiry page.</p>
+      </section>
     );
   }
   const reasonOf = (c: Candidate, test: (r: string) => boolean) => c.reasons.find(test);

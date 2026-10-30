@@ -16,7 +16,7 @@ const iso = (d: Date): string => d.toISOString();
 const AUTOMATIC_STEPS: LeadAssignment['step'][] = ['auto', 'reassignment'];
 
 /* ───────────── helpers ───────────── */
-async function assignmentsOf(ctx: AppContext, leadId: string): Promise<LeadAssignment[]> {
+export async function assignmentsOf(ctx: AppContext, leadId: string): Promise<LeadAssignment[]> {
   return ctx.db.table('lead_assignments').all({ lead_id: leadId }, { orderBy: { col: 'assigned_at', dir: 'asc' } });
 }
 
@@ -34,7 +34,7 @@ async function closePending(ctx: AppContext, leadId: string, status: LeadAssignm
   return out;
 }
 
-const leadGeo = async (ctx: AppContext, lead: Lead): Promise<RoutingGeo> => {
+export const leadGeo = async (ctx: AppContext, lead: Lead): Promise<RoutingGeo> => {
   const geo = await resolveGeo(ctx, lead.pincode);
   return geo.territory_id || !lead.territory_id ? geo : { ...geo, territory_id: lead.territory_id };
 };
@@ -120,28 +120,61 @@ export async function routeLead(ctx: AppContext, lead: Lead, opts: { step: LeadA
 }
 
 /* ───────────── step 7: accept / reject ───────────── */
-export async function acceptLead(ctx: AppContext, leadId: string, opts: { note?: string | null; implicit?: boolean } = {}): Promise<Lead> {
+/** Which open request an answer is about. When the request went to several distributors the caller must say which one answered. */
+function pickRequest(pending: LeadAssignment[], distributorId?: string | null): LeadAssignment | undefined {
+  if (distributorId) {
+    const hit = pending.find((a) => a.distributor_id === distributorId);
+    if (!hit) throw invalidState('That distributor has no open request for this lead');
+    return hit;
+  }
+  if (pending.length > 1) throw new AppError(422, 'VALIDATION_ERROR', 'The request went to several distributors — say which one answered', [{ path: 'distributor_id', message: 'Choose the distributor' }]);
+  return pending[0];
+}
+
+export async function acceptLead(ctx: AppContext, leadId: string, opts: { note?: string | null; implicit?: boolean; distributor_id?: string | null } = {}): Promise<Lead> {
   const lead = await getLead(ctx, leadId);
   if (lead.status !== 'assigned') throw invalidState(`This lead is ${lead.status.replace('_', ' ')} — only a lead awaiting acceptance can be accepted`);
-  const pending = (await assignmentsOf(ctx, leadId)).filter((a) => a.status === 'pending').pop();
+  const open = (await assignmentsOf(ctx, leadId)).filter((a) => a.status === 'pending');
+  const pending = pickRequest(open, opts.distributor_id);
   const now = iso(ctx.now());
   if (pending) await ctx.db.table('lead_assignments').update(pending.id, { status: 'accepted', responded_at: now });
+  // several distributors were asked: the first to accept gets the lead, the other requests close
+  const others = open.filter((a) => a.id !== pending?.id);
+  for (const o of others) await ctx.db.table('lead_assignments').update(o.id, { status: 'reassigned', responded_at: now, reason: 'Another distributor accepted first' });
+  const winner = !lead.distributor_id && pending?.distributor_id ? await ctx.db.table('distributors').get(pending.distributor_id) : null;
   const clock = await completeLeadClock(ctx, leadId, 'lead_acceptance', { accepted_by: actorId(ctx) });
   const external = ctx.user.role === 'distributor_user' || ctx.user.role === 'dealer_user';
-  await saveLead(ctx, leadId, { status: 'accepted', accepted_at: now, owner_id: external ? ctx.user.id : lead.owner_id });
+  await saveLead(ctx, leadId, { status: 'accepted', accepted_at: now, owner_id: external ? ctx.user.id : lead.owner_id, ...(winner ? { distributor_id: winner.id, last_action: `Accepted by ${winner.legal_name}` } : {}) });
   await planNextAction(ctx, leadId, { note: 'Make the initial contact with the customer', kind: 'call', lastAction: opts.implicit ? 'Lead accepted by first contact' : 'Lead accepted' });
   const late = clock?.status === 'breached';
-  await logLeadEvent(ctx, leadId, 'accepted', `Lead accepted${late ? ' after the SLA' : ' within the SLA'}${opts.note ? ` — ${opts.note}` : ''}`, { assignment_id: pending?.id ?? null, within_sla: !late, implicit: !!opts.implicit, note: opts.note ?? null });
+  await logLeadEvent(ctx, leadId, 'accepted', `Lead accepted${winner ? ` by ${winner.legal_name}` : ''}${late ? ' after the SLA' : ' within the SLA'}${others.length ? `; ${others.length} other request(s) closed` : ''}${opts.note ? ` — ${opts.note}` : ''}`, { assignment_id: pending?.id ?? null, within_sla: !late, implicit: !!opts.implicit, note: opts.note ?? null });
   await audit(ctx, { action: 'lead.accept', table: 'leads', record_id: leadId, old: { status: lead.status } as Json, new: { status: 'accepted', within_sla: !late } as Json });
   return getLead(ctx, leadId);
 }
 
-export async function rejectLead(ctx: AppContext, leadId: string, reason: string): Promise<{ lead: Lead; reassigned: boolean }> {
+export async function rejectLead(ctx: AppContext, leadId: string, reason: string, distributorId?: string | null): Promise<{ lead: Lead; reassigned: boolean }> {
   const lead = await getLead(ctx, leadId);
   if (lead.status !== 'assigned') throw invalidState(`This lead is ${lead.status.replace('_', ' ')} — only a lead awaiting acceptance can be rejected`);
-  const pending = (await assignmentsOf(ctx, leadId)).filter((a) => a.status === 'pending').pop();
+  const open = (await assignmentsOf(ctx, leadId)).filter((a) => a.status === 'pending');
+  const pending = pickRequest(open, distributorId);
   if (pending) await ctx.db.table('lead_assignments').update(pending.id, { status: 'rejected', responded_at: iso(ctx.now()), reason });
+  const stillOpen = open.filter((a) => a.id !== pending?.id);
+  if (stillOpen.length) {
+    // other distributors are still being asked: this one is out, the lead keeps waiting
+    await logLeadEvent(ctx, leadId, 'rejected', `Request rejected: ${reason}`, { assignment_id: pending?.id ?? null, reason, distributor_id: pending?.distributor_id ?? null, still_waiting: stillOpen.length });
+    return { lead: await getLead(ctx, leadId), reassigned: false };
+  }
   await ctx.svc.clocks.cancel('lead', leadId, 'lead_acceptance');
+  if (!lead.distributor_id) {
+    // the requests were picked by a person: nobody is left, so it goes back to the DSM to choose again (no automatic pick)
+    await logLeadEvent(ctx, leadId, 'rejected', `Last open request rejected: ${reason}`, { assignment_id: pending?.id ?? null, reason, distributor_id: pending?.distributor_id ?? null });
+    const { after } = await saveLead(ctx, leadId, {
+      status: 'unassigned', accepted_at: null, sla_due_at: null, last_action: 'Every requested distributor declined', last_action_at: iso(ctx.now()), next_action: 'Choose other distributors to send the request to',
+    });
+    await audit(ctx, { action: 'lead.reject', table: 'leads', record_id: leadId, old: { status: lead.status } as Json, detail: { reason, all_declined: true } as Json });
+    await notifyStaff(ctx, { user_ids: await dsmIds(ctx, lead.territory_id), kind: 'lead.rejected', severity: 'warning', lead_id: leadId, title: `Every distributor declined — ${lead.name}`, body: `${reason}. Choose other distributors.` });
+    return { lead: after, reassigned: false };
+  }
   await logLeadEvent(ctx, leadId, 'rejected', `Lead rejected: ${reason}`, { assignment_id: pending?.id ?? null, reason, distributor_id: pending?.distributor_id ?? lead.distributor_id });
   await audit(ctx, { action: 'lead.reject', table: 'leads', record_id: leadId, old: { status: lead.status, distributor_id: lead.distributor_id } as Json, detail: { reason } as Json });
   await notifyStaff(ctx, { user_ids: await dsmIds(ctx, lead.territory_id), kind: 'lead.rejected', severity: 'info', lead_id: leadId, title: `Lead rejected — ${lead.name}`, body: reason });
@@ -152,6 +185,7 @@ export async function rejectLead(ctx: AppContext, leadId: string, reason: string
 /** First contact or qualification by the assignee counts as acceptance. Leads not yet routed cannot be worked. */
 export async function ensureAcceptedForWork(ctx: AppContext, lead: Lead): Promise<Lead> {
   if (['accepted', 'contacted', 'qualified', 'site_visit', 'nurture'].includes(lead.status)) return lead;
+  if (lead.status === 'assigned' && !lead.distributor_id) throw invalidState('Waiting for a distributor to accept — record who accepted first');
   if (lead.status === 'assigned') return acceptLead(ctx, lead.id, { implicit: true });
   throw invalidState(lead.status === 'unassigned' ? 'This lead has no distributor yet — assign it first' : `A lead that is ${lead.status.replace('_', ' ')} cannot be worked`);
 }
@@ -232,7 +266,7 @@ registerClockHandlers('lead_acceptance', {
     if (level < 2) return;
     const w = await awaiting(ctx, clock);
     if (!w) return;
-    if (w.assignment) await ctx.db.table('lead_assignments').update(w.assignment.id, { status: 'expired', responded_at: iso(ctx.now()), reason: 'Not accepted within the SLA' });
+    await closePending(ctx, w.lead.id, 'expired', 'Not accepted within the SLA');
     await logLeadEvent(ctx, w.lead.id, 'acceptance_expired', 'Still not accepted — re-assigning to the next best distributor', { assignment_id: w.assignment?.id ?? null, level });
     const routed = await routeLead(ctx, w.lead, { step: 'reassignment', reason: 'Auto-reassigned: not accepted within the SLA', exclude: await excludedDistributors(ctx, w.lead.id) });
     await logLeadEvent(ctx, w.lead.id, 'auto_reassigned', routed.assigned ? `Auto-reassigned to ${routed.decision.chosen?.name ?? 'the next distributor'}` : 'No other eligible distributor — handed to the DSM', { assigned: routed.assigned, distributor_id: routed.lead.distributor_id });

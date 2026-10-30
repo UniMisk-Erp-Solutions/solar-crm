@@ -54,7 +54,8 @@ export const DEFAULT_PRODUCTS: Record<string, string[]> = {
 /** Where an inquiry is on the Stage 1 chart, in the chart's own words. */
 export function stageOf(l: Pick<LeadListItem, 'status' | 'sla_state'>): { step: string; label: string; tone: 'danger' | 'warning' | 'primary' | 'success' | 'neutral' } {
   if (l.status === 'duplicate') return { step: '2', label: 'Duplicate — to review', tone: 'warning' };
-  if (l.status === 'new' || l.status === 'validated' || l.status === 'unassigned') return { step: '6', label: 'Escalated to DSM', tone: 'danger' };
+  if (l.status === 'validated') return { step: '4', label: 'Choose distributors', tone: 'warning' };
+  if (l.status === 'new' || l.status === 'unassigned') return { step: '6', label: 'Escalated to DSM', tone: 'danger' };
   if (l.status === 'assigned') return l.sla_state === 'breached' ? { step: '7', label: 'Reminder and escalation loop', tone: 'danger' } : { step: '7', label: 'Awaiting acceptance', tone: 'primary' };
   if (l.status === 'merged' || l.status === 'lost') return { step: '', label: l.status === 'lost' ? 'Lost' : 'Merged', tone: 'neutral' };
   return { step: '', label: 'Lead accepted', tone: 'success' };

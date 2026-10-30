@@ -141,8 +141,12 @@ export const leadPatchSchema = z.object({
 }).refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'Nothing to update' });
 export type LeadPatchInput = z.infer<typeof leadPatchSchema>;
 
-export const leadAcceptSchema = z.object({ note: opt(z.string().trim().max(300)) });
-export const leadRejectSchema = z.object({ reason: reasonSchema });
+/** distributor_id: which of the requested distributors answered (needed when the request went to more than one). */
+export const leadAcceptSchema = z.object({ note: opt(z.string().trim().max(300)), distributor_id: opt(uuidSchema) });
+export const leadRejectSchema = z.object({ reason: reasonSchema, distributor_id: opt(uuidSchema) });
+/** Send the lead to the distributors a person picked from the suggestions (the first to accept gets it). */
+export const leadRequestsSchema = z.object({ distributor_ids: z.array(uuidSchema).min(1, 'Pick at least one distributor').max(10), note: opt(z.string().trim().max(300)) });
+export type LeadRequestsInput = z.output<typeof leadRequestsSchema>;
 export const leadReassignSchema = z.object({
   distributor_id: opt(uuidSchema), dealer_id: opt(uuidSchema), owner_id: opt(uuidSchema),
   /** run the routing engine again (excluding distributors that already rejected / expired) instead of naming one */
@@ -283,9 +287,18 @@ export interface LeadConsentSummary {
   outbound: Record<'whatsapp' | 'sms' | 'email' | 'call', { promotional: boolean; service: boolean }>;
 }
 
+/** One request sent to a distributor for this lead. */
+export interface LeadRequestView { id: string; distributor_id: string | null; distributor_name: string | null; status: LeadAssignment['status']; requested_at: string; due_at: string | null; responded_at: string | null; reason: string | null }
+/** A ranked distributor for a lead. recommended = among the best eligible ones; anything else can still be picked. */
+export interface LeadSuggestion {
+  distributor_id: string; name: string; city: string | null; home_pincode: string | null; eligible: boolean; recommended: boolean; reasons: string[];
+  score: number; open_leads: number; band_fit: number; proximity: number; distance_hint: string | null; total: number; request_status: LeadAssignment['status'] | null;
+}
+export interface LeadSuggestions { lead_id: string; pincode: string | null; territory_name: string | null; candidates: LeadSuggestion[] }
+
 export interface LeadDetail {
   lead: Lead & { owner_name: string | null; distributor_name: string | null; dealer_name: string | null; territory_name: string | null };
-  events: LeadEvent[]; consents: LeadConsent[]; consent_summary: LeadConsentSummary; assignments: LeadAssignment[]; followups: Followup[]; contact_logs: ContactLog[];
+  events: LeadEvent[]; consents: LeadConsent[]; consent_summary: LeadConsentSummary; assignments: LeadAssignment[]; requests: LeadRequestView[]; followups: Followup[]; contact_logs: ContactLog[];
   score: LeadScore | null; clocks: Clock[]; duplicates: LeadDuplicateReport;
   customer_id: string | null; site_id: string | null; opportunity_ids: string[];
   next_best_action: LeadNextBestAction; convert_blockers: LeadConvertBlocker[]; can_convert: boolean; validation_hints: LeadValidationHint[];

@@ -7,7 +7,7 @@ import LeadsModule from './LeadsModule';
 const now = new Date().toISOString();
 const future = new Date(Date.now() + 25 * 60_000).toISOString();
 const lead = (over: Record<string, unknown> = {}) => ({
-  id: 'l1', name: 'Asha Patel', source: 'website', city: 'Ahmedabad', capacity_kw: 5, status: 'assigned', distributor_name: 'Alpha Solar', owner_name: null,
+  id: 'l1', name: 'Asha Patel', source: 'website', city: 'Ahmedabad', capacity_kw: 5, status: 'assigned', distributor_id: 'd1', distributor_name: 'Alpha Solar', owner_name: null,
   sla_due_at: future, assigned_at: now, sla_state: 'ok', followup_overdue: false, quality_score: 72, ...over,
 });
 const open = (handlers: Handlers, route = '/leads') => renderPage(<LeadsModule />, { route, path: '/leads', handlers });
@@ -52,7 +52,7 @@ describe('Leads - Inquiries (Stage 1 of the flow chart)', () => {
   const cand = (id: string, name: string, reasons: string[], score: number) => ({ distributor_id: id, name, eligible: reasons.length === 0, reasons, score });
   const detail = (status: string, over: Record<string, unknown> = {}, candidates = [cand('d1', 'Alpha Solar (Demo)', [], 84), cand('d2', 'Beta Energy (Demo)', ['Does not serve Ahmedabad', 'Lacks capability: rooftop'], 71)]) => ({
     data: {
-      lead: lead({ id: 'n1', name: 'Meera Joshi', status, temperature: 'hot', distributor_name: status === 'assigned' ? 'Alpha Solar (Demo)' : null, owner_name: 'Asha Rao', ...over }),
+      lead: lead({ id: 'n1', name: 'Meera Joshi', status, temperature: 'hot', distributor_id: status === 'assigned' ? 'd1' : null, distributor_name: status === 'assigned' ? 'Alpha Solar (Demo)' : null, owner_name: 'Asha Rao', ...over }),
       events: [{ id: 'e1', event_type: 'assigned', created_at: now, summary: 'Assigned' }],
       assignments: [{ assigned_at: now, score_snapshot: { candidates, geo: { territory_name: 'Ahmedabad' }, chosen: status === 'assigned' ? 'd1' : null } }],
       clocks: status === 'assigned' ? [{ clock_type: 'lead_acceptance', started_at: now, due_at: new Date(Date.now() + 30 * 60_000).toISOString(), warn_at: new Date(Date.now() + 21 * 60_000).toISOString(), meta: { step_minutes: 15 } }] : [],
@@ -102,21 +102,51 @@ describe('Leads - Inquiries (Stage 1 of the flow chart)', () => {
     for (const n of ['Assigned', 'Reminder 1', 'DSM alert', 'Auto reassignment']) expect(within(dialog).getByText(n)).toBeInTheDocument();
   });
 
-  it('new inquiry: with no eligible distributor it is step 6, with the reasons, and the DSM can assign', async () => {
+  const sug = (id: string, name: string, over: Record<string, unknown> = {}) => ({
+    distributor_id: id, name, city: 'Ahmedabad', home_pincode: '380015', eligible: true, recommended: false, reasons: [], score: 70, open_leads: 0, band_fit: 0.5, proximity: 0.9,
+    distance_hint: 'same postal region', total: 0.7, request_status: null, ...over,
+  });
+  const suggestions = {
+    data: { lead_id: 'n1', pincode: '380001', territory_name: 'Ahmedabad', candidates: [
+      sug('d1', 'Alpha Solar', { recommended: true }), sug('d2', 'Beta Energy', { recommended: true }),
+      sug('d3', 'Gamma Power', { eligible: false, reasons: ['Does not serve Ahmedabad'], distance_hint: 'far region' }),
+    ] },
+  };
+
+  it('new inquiry: the system only SUGGESTS; nothing is sent until you tick the distributors and press send', async () => {
     const user = userEvent.setup();
-    const none = [cand('d1', 'Alpha Solar (Demo)', ['Does not serve Surat'], 84)];
     const { api } = open({
-      'GET /leads': page([]), ...geo, 'GET /distributors': page([{ id: 'd1', legal_name: 'Alpha Solar Pvt Ltd', trade_name: 'Alpha Solar' }]),
-      'POST /leads': { data: { lead: lead({ id: 'n1', status: 'unassigned' }), created: true, duplicate_of: null, assigned: false } }, 'GET /leads/n1': detail('unassigned', {}, none),
-      'POST /leads/n1/reassign': { data: lead({ id: 'n1', status: 'assigned' }) },
+      'GET /leads': page([]), ...geo,
+      'POST /leads': { data: { lead: lead({ id: 'n1', status: 'validated' }), created: true, duplicate_of: null, assigned: false } },
+      'GET /leads/n1': detail('validated', { distributor_id: null }), 'GET /leads/n1/suggestions': suggestions,
+      'POST /leads/n1/requests': { data: lead({ id: 'n1', status: 'assigned' }) },
     });
     await fillNew(user);
-    expect(await screen.findByText(/Distributor available & eligible — NO/)).toBeInTheDocument();
-    expect(screen.getByText('6 · Escalate to DSM / reassign territory')).toBeInTheDocument();
-    expect(screen.getByText('Does not serve Surat')).toBeInTheDocument();
-    await user.selectOptions(await screen.findByLabelText('Distributor'), 'd1');
-    await user.click(screen.getByRole('button', { name: 'Assign' }));
-    await waitFor(() => expect(api.calls.find((c) => c.path === '/leads/n1/reassign')?.body).toMatchObject({ distributor_id: 'd1' }));
+    expect(await screen.findByText('Recommended for this pincode')).toBeInTheDocument();
+    expect(api.calls.some((c) => c.path === '/leads/n1/requests')).toBe(false);
+    // the best matches are marked, a non-matching one is still selectable and says why it is not perfect
+    expect(screen.getByText('Does not serve Ahmedabad')).toBeInTheDocument();
+    expect(screen.getByText('Not a perfect match')).toBeInTheDocument();
+    const send = screen.getByRole('button', { name: /send request/i });
+    expect(send).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: /send the request to alpha solar/i }));
+    await user.click(screen.getByRole('checkbox', { name: /send the request to gamma power/i }));
+    await user.click(screen.getByRole('button', { name: /send request to 2 distributors/i }));
+    await waitFor(() => expect(api.calls.find((c) => c.method === 'POST' && c.path === '/leads/n1/requests')?.body).toEqual({ distributor_ids: ['d1', 'd3'] }));
+  });
+
+  it('"Select the best matches" ticks every recommended distributor at once', async () => {
+    const user = userEvent.setup();
+    const { api } = open({
+      'GET /leads': page([]), ...geo,
+      'POST /leads': { data: { lead: lead({ id: 'n1', status: 'validated' }), created: true, duplicate_of: null, assigned: false } },
+      'GET /leads/n1': detail('validated', { distributor_id: null }), 'GET /leads/n1/suggestions': suggestions,
+      'POST /leads/n1/requests': { data: lead({ id: 'n1', status: 'assigned' }) },
+    });
+    await fillNew(user);
+    await user.click(await screen.findByRole('button', { name: /select the best matches/i }));
+    await user.click(screen.getByRole('button', { name: /send request to 2 distributors/i }));
+    await waitFor(() => expect(api.calls.find((c) => c.path === '/leads/n1/requests')?.body).toEqual({ distributor_ids: ['d1', 'd2'] }));
   });
 
   it('new inquiry (step 2): a duplicate is held for review instead of being assigned', async () => {

@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { page, renderPage, type Handlers } from '@/test/utils';
@@ -68,5 +68,29 @@ describe('LeadDetailPage', () => {
   it('shows an error state when the lead cannot be loaded', async () => {
     open({ 'GET /leads/l1': { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Lead not found' } } } });
     expect(await screen.findByText('Lead not found')).toBeInTheDocument();
+  });
+
+  it('a request sent to several distributors lists them; recording who accepted sends that distributor, and a decline needs a reason', async () => {
+    const user = userEvent.setup();
+    const requests = [
+      { id: 'r1', distributor_id: 'd1', distributor_name: 'Alpha Solar', status: 'pending', requested_at: iso, due_at: iso, responded_at: null, reason: null },
+      { id: 'r2', distributor_id: 'd2', distributor_name: 'Beta Energy', status: 'pending', requested_at: iso, due_at: iso, responded_at: null, reason: null },
+    ];
+    const base = detail();
+    const { api } = open({
+      'GET /leads/l1': { data: { ...base, lead: { ...base.lead, distributor_id: null }, requests, next_best_action: { code: 'wait_requests', label: 'Waiting for a distributor to accept', due_at: null, urgent: true } } },
+      'POST /leads/l1/accept': { data: {} }, 'POST /leads/l1/reject': { data: { lead: {}, reassigned: false } },
+    });
+    expect(await screen.findByText('Alpha Solar')).toBeInTheDocument();
+    expect(screen.getByText('Beta Energy')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /mark accepted beta energy/i }));
+    await waitFor(() => expect(api.calls.find((c) => c.path === '/leads/l1/accept')?.body).toEqual({ distributor_id: 'd2' }));
+    await user.click(screen.getByRole('button', { name: /mark declined alpha solar/i }));
+    const dlg = await screen.findByRole('dialog');
+    const go = within(dlg).getByRole('button', { name: 'Record decline' });
+    expect(go).toBeDisabled();
+    await user.type(within(dlg).getByRole('textbox'), 'No stock');
+    await user.click(go);
+    await waitFor(() => expect(api.calls.find((c) => c.path === '/leads/l1/reject')?.body).toEqual({ reason: 'No stock', distributor_id: 'd1' }));
   });
 });

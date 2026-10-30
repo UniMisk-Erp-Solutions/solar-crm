@@ -74,8 +74,8 @@ const REQUIRED_FIELD_LABEL: Record<string, string> = {
 export async function qualificationGaps(ctx: AppContext, lead: Lead): Promise<string[]> {
   const required = await ruleOr<string[]>(ctx, 'lead.qualification_required_fields', ['requirement_text', 'timeline_bucket', 'decision_maker', 'capacity_kw']);
   const known: Record<string, boolean> = {
-    requirement_text: !!lead.requirement_text?.trim(), timeline_bucket: !!lead.timeline_bucket && lead.timeline_bucket !== 'unknown',
-    decision_maker: !!lead.decision_maker && lead.decision_maker !== 'unknown', capacity_kw: lead.capacity_kw !== null, budget_inr: lead.budget_inr !== null, segment: !!lead.segment,
+    requirement_text: !!lead.requirement_text?.trim(), timeline_bucket: !!lead.timeline_bucket,
+    decision_maker: !!lead.decision_maker, capacity_kw: lead.capacity_kw !== null, budget_inr: lead.budget_inr !== null, segment: !!lead.segment,
   };
   return required.filter((f) => f in known && !known[f]).map((f) => REQUIRED_FIELD_LABEL[f] ?? f);
 }

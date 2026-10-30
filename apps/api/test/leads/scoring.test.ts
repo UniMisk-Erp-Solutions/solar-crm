@@ -166,9 +166,9 @@ describe('qualification → temperature, score, status, follow-up (API)', () => 
     const id = (await env.capture(person({ capacity_kw: undefined }))).body.data.lead_id as string;
     const res = await env.u('distributor_user').post(`${API}/leads/${id}/qualification`).send({ ...answers, decision_maker: 'unknown' });
     expect(res.body.data.qualified).toBe(false);
-    expect(res.body.data.gaps).toEqual(['decision maker', 'system size (kW)']);
+    expect(res.body.data.gaps).toEqual(['system size (kW)']); // "not known yet" is a recorded answer, so it is not a gap
     expect(res.body.data.lead.status).toBe('contacted');
-    expect((await env.lead(id)).next_action).toMatch(/still needed: decision maker, system size/);
+    expect((await env.lead(id)).next_action).toMatch(/still needed: system size/);
   });
 
   it('qualification needs the answers and an accepted lead', async () => {
