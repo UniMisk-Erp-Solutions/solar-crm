@@ -20,9 +20,16 @@ export function DistributorPicker({ leadId, onSent, title }: { leadId: string; o
   const q = useGet<LeadSuggestions>(`/leads/${leadId}/suggestions`);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState('');
-  const send = useAction<{ distributor_ids: string[] }>({
+  type Emails = { sent: string[]; failed: { name: string; error: string }[]; skipped: { name: string; why: string }[] };
+  const send = useAction<{ distributor_ids: string[] }, { emails?: Emails }>({
     path: `/leads/${leadId}/requests`, invalidate: ['/leads', '/followups'],
-    successMessage: t('leads.req.sent', 'Request sent. The first distributor to accept gets the lead.'),
+    successMessage: (out) => {
+      const e = out?.emails;
+      const base = t('leads.req.sent', 'Request sent. The first distributor to accept gets the lead.');
+      if (!e) return base;
+      const bad = e.failed.length + e.skipped.length;
+      return e.sent.length ? `${base} E-mailed ${e.sent.length}${bad ? `; ${bad} could not be e-mailed (see the lead history)` : ''}.` : `${base} No e-mail could be sent (see the lead history).`;
+    },
     onSuccess: () => { setPicked(new Set()); onSent?.(); },
   });
   const all = useMemo(() => q.data?.candidates ?? [], [q.data]);

@@ -18,7 +18,12 @@ const schema = z.object({
 
   WHATSAPP_PROVIDER: z.enum(['mock']).default('mock'),
   SMS_PROVIDER: z.enum(['mock']).default('mock'),
-  EMAIL_PROVIDER: z.enum(['mock', 'smtp']).default('mock'),
+  EMAIL_PROVIDER: z.enum(['mock', 'smtp', 'resend']).default('mock'),
+  /** Resend (HTTPS e-mail API; works inside a Supabase Edge Function, where SMTP is blocked). */
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('Future Solar <onboarding@resend.dev>'),
+  /** Address of the web app, used for the links in e-mails when the request does not say (e.g. https://solar-crm.vercel.app). */
+  APP_URL: z.string().optional(),
   DND_PROVIDER: z.enum(['mock']).default('mock'),
   EINVOICE_PROVIDER: z.enum(['mock']).default('mock'),
   EWAYBILL_PROVIDER: z.enum(['mock']).default('mock'),

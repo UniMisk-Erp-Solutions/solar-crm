@@ -10,6 +10,7 @@ const L = <T extends ComponentType>(f: () => Promise<{ default: T }>) => lazy(f)
 const LoginPage = L(() => import('@/pages/auth/LoginPage'));
 const NotFoundPage = L(() => import('@/pages/auth/NotFoundPage'));
 const PublicLeadFormPage = L(() => import('@/pages/public/PublicLeadFormPage'));
+const LeadRequestPage = L(() => import('@/pages/public/LeadRequestPage'));
 const HomePage = L(() => import('@/pages/home/HomePage'));
 const LeadsModule = L(() => import('@/pages/leads/LeadsModule'));
 const LeadDetailPage = L(() => import('@/pages/leads/LeadDetailPage'));
@@ -41,6 +42,7 @@ function RequireAdmin() {
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/apply', element: <PublicLeadFormPage /> },
+  { path: '/lead-request/:token', element: <LeadRequestPage /> },
   {
     element: <RequireAdmin />,
     children: [

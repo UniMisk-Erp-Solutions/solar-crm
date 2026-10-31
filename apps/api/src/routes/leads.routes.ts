@@ -144,7 +144,11 @@ router.get('/leads/:id/suggestions', allow(...SALES), handle(async (ctx, req) =>
 /** Send the request to the distributors a person picked. The first to accept gets the lead. */
 router.post('/leads/:id/requests', allow(...SALES), handle(async (ctx, req) => {
   await readable(ctx, param(req, 'id'));
-  return one(ctx, await sendRequests(ctx, param(req, 'id'), body(leadRequestsSchema, req)));
+  const input = body(leadRequestsSchema, req);
+  // the e-mail links point at the web app the person is using right now (its address arrives in the Origin header)
+  const origin = typeof req.headers.origin === 'string' && /^https?:\/\//.test(req.headers.origin) ? req.headers.origin : null;
+  const sent = await sendRequests(ctx, param(req, 'id'), { ...input, appUrl: origin });
+  return { ...(await one(ctx, sent.lead)), emails: sent.emails };
 }));
 
 router.post('/leads/:id/reassign', allow(...MANAGERS), handle(async (ctx, req) => {

@@ -3,6 +3,7 @@ import { DEMO_ORG_ID, seedId, sha256Hex, type AppRole, type Lead, type LeadSourc
 import { createApp } from '../../src/app';
 import leadsRouter from '../../src/routes/leads.routes';
 import { createPublicRouter } from '../../src/routes/public.routes';
+import { createLeadRequestRouter } from '../../src/routes/leadRequest.routes';
 import { IDS, createTestEnv, type TestEnv, type TestEnvOptions } from '../helpers/env';
 
 export { IDS };
@@ -29,7 +30,7 @@ export const person = (over: Record<string, unknown> = {}) => ({
 /** Tenant of test/helpers/env baseSeed + pincodes, the lead routers and the public router mounted. */
 export function leadEnv(opts: TestEnvOptions = {}): LeadEnv {
   const base = createTestEnv(opts);
-  const app = createApp(base.deps, { authed: [leadsRouter], public: [createPublicRouter(base.deps)] });
+  const app = createApp(base.deps, { authed: [leadsRouter], public: [createPublicRouter(base.deps), createLeadRequestRouter(base.deps)] });
   const idOf = (who: string) => (/^[0-9a-f-]{36}$/.test(who) ? who : IDS.profile(who as AppRole));
   const u: LeadEnv['u'] = (who) => {
     const auth = (r: request.Test) => r.set('Authorization', `Bearer ${base.token(idOf(who))}`);

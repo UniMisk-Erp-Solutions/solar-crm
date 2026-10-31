@@ -3,6 +3,7 @@ import { SupabaseDb } from '../db/supabase';
 import type { Db } from '../db/types';
 import type { Logger } from '../lib/logger';
 import { LocalPincodeLookup, MockDnd, MockEInvoice, MockEmail, MockEwayBill, MockSms, MockWhatsApp } from './mock';
+import { ResendEmail } from './resend';
 import { SmtpEmail } from './smtp';
 import { MemoryStorage, SupabaseStorage } from './storage';
 import type { Providers } from './types';
@@ -14,7 +15,8 @@ export function buildProviders(config: Config, db: Db, log: Logger): Providers {
   return {
     whatsapp: new MockWhatsApp(log),
     sms: new MockSms(log),
-    email: config.EMAIL_PROVIDER === 'smtp' && config.SMTP_HOST ? new SmtpEmail(config) : new MockEmail(log),
+    email: config.EMAIL_PROVIDER === 'resend' && config.RESEND_API_KEY ? new ResendEmail(config.RESEND_API_KEY, config.EMAIL_FROM)
+      : config.EMAIL_PROVIDER === 'smtp' && config.SMTP_HOST ? new SmtpEmail(config) : new MockEmail(log),
     dnd: new MockDnd(db),
     einvoice: new MockEInvoice(),
     ewayBill: new MockEwayBill(),

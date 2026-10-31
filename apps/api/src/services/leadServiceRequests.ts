@@ -10,6 +10,7 @@ import { audit } from '../lib/audit';
 import { assignmentsOf, leadGeo } from './leadServiceAcceptance';
 import { acceptanceDueAt, ruleOr } from './leadServiceSettings';
 import { fallbackOwnerId, getLead, logLeadEvent, notifyStaff, saveLead } from './leadServiceStore';
+import { emailRequests, type MailSummary, type MailTarget } from './leadRequestEmail';
 import { pickOwner, planRouting } from './routing';
 
 const iso = (d: Date): string => d.toISOString();
@@ -40,7 +41,7 @@ export async function suggestDistributors(ctx: AppContext, leadId: string): Prom
 }
 
 /** Sends the request to every chosen distributor at once. The acceptance clock starts with the first request; more can be added while waiting. */
-export async function sendRequests(ctx: AppContext, leadId: string, input: { distributor_ids: string[]; note?: string | null }): Promise<Lead> {
+export async function sendRequests(ctx: AppContext, leadId: string, input: { distributor_ids: string[]; note?: string | null; appUrl?: string | null }): Promise<{ lead: Lead; emails: MailSummary }> {
   const lead = await getLead(ctx, leadId);
   if (!REQUESTABLE.includes(lead.status)) throw invalidState(`This lead is ${lead.status.replace('_', ' ')} — requests can only be sent while it is waiting for a distributor`);
   const ids = [...new Set(input.distributor_ids)];
@@ -58,15 +59,17 @@ export async function sendRequests(ctx: AppContext, leadId: string, input: { dis
   const due = running ?? (await acceptanceDueAt(ctx, lead.temperature, now));
   const territoryId = geo.territory_id ?? lead.territory_id;
   const names: string[] = [];
+  const targets: MailTarget[] = [];
   for (const d of dists) {
     const owner = (await pickOwner(ctx, { distributor_id: d.id, territory_id: territoryId })) ?? lead.owner_id ?? (await fallbackOwnerId(ctx, territoryId));
     const cand = plan.candidates.find((c) => c.distributor_id === d.id) ?? null;
-    await ctx.db.table('lead_assignments').insert({
+    const row = await ctx.db.table('lead_assignments').insert({
       lead_id: lead.id, distributor_id: d.id, dealer_id: null, assigned_to: owner, step: 'manual', status: 'pending', reason: `Request sent by ${ctx.user.full_name}${input.note ? `: ${input.note}` : ''}`,
       assigned_at: iso(now), due_at: iso(due), responded_at: null, score_snapshot: { mode: 'select', geo, chosen: d.id, candidate: cand, picked_from: plan.candidates.slice(0, 8) } as unknown as Json,
       created_by: ctx.system ? null : ctx.user.id,
     });
     names.push(d.legal_name);
+    targets.push({ assignmentId: row.id, distributor: d });
   }
   const asked = `${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''}`;
   const { after } = await saveLead(ctx, lead.id, {
@@ -86,7 +89,9 @@ export async function sendRequests(ctx: AppContext, leadId: string, input: { dis
     user_ids: [lead.owner_id ?? ''].filter(Boolean), kind: 'lead.requests_sent', severity: 'info', lead_id: lead.id,
     title: `Request sent for ${lead.name}`, body: `Asked ${asked}. Record who accepts first by ${formatDateTime(iso(due))}.`,
   });
-  return after;
+  // the distributors are told by e-mail and answer from the link; a mail that cannot be sent is logged on the lead and never undoes the request
+  const emails = await emailRequests(ctx, after, targets, due, input.appUrl ?? null);
+  return { lead: after, emails };
 }
 
 /** Everything sent so far for the lead page: who was asked, and how each answered. */

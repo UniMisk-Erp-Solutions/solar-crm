@@ -11,6 +11,7 @@ import { aadhaarGuard, authLimiter, generalLimiter } from './http/guards';
 import { authedRouters, publicRouters } from './routes';
 import { createAuthRouter } from './routes/auth.routes';
 import { createFilesRouter } from './routes/files.routes';
+import { createLeadRequestRouter } from './routes/leadRequest.routes';
 import { createPublicRouter } from './routes/public.routes';
 
 /** CORS allow-list: exact origins, or one wildcard label such as https://*.vercel.app (the * matches a single host label). */
@@ -48,7 +49,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): Express {
   // 1) unauthenticated: login helpers, public lead capture, webhooks
   api.use('/auth', authLimiter(deps.config), createAuthRouter(deps));
   api.use(createFilesRouter(deps));
-  for (const r of opts.public ?? [createPublicRouter(deps), ...publicRouters]) api.use(r);
+  for (const r of opts.public ?? [createPublicRouter(deps), createLeadRequestRouter(deps), ...publicRouters]) api.use(r);
   // 2) everything else needs a user
   api.use(authenticate(deps));
   api.use(aadhaarGuard);

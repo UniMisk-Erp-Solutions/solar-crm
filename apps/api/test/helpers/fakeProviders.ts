@@ -3,7 +3,7 @@ import type { DndResult, InboundMessage, Providers, SignedUrl } from '../../src/
 export interface FakeProviders extends Providers {
   calls: {
     whatsappTemplate: { to: string; template_name: string }[]; whatsappSession: { to: string; body: string }[];
-    sms: { to: string; dlt_template_id: string; dlt_header: string }[]; email: { to: string; subject: string }[];
+    sms: { to: string; dlt_template_id: string; dlt_header: string }[]; email: { to: string; subject: string; text: string; html?: string }[];
   };
   dndOverrides: Map<string, DndResult>;
   files: Map<string, Buffer>;
@@ -30,7 +30,7 @@ export function fakeProviders(): FakeProviders {
       },
     },
     sms: { name: 'fake-sms', send: async (i) => { calls.sms.push({ to: i.to, dlt_template_id: i.dlt_template_id, dlt_header: i.dlt_header }); return { ok: true, provider: 'fake-sms', ref: ref('sms') }; } },
-    email: { name: 'fake-email', send: async (i) => { calls.email.push({ to: i.to, subject: i.subject }); return { ok: true, provider: 'fake-email', ref: ref('em') }; } },
+    email: { name: 'fake-email', send: async (i) => { calls.email.push({ to: i.to, subject: i.subject, text: i.text, html: i.html }); return { ok: true, provider: 'fake-email', ref: ref('em') }; } },
     dnd: { name: 'fake-dnd', check: async (m) => dndOverrides.get(m) ?? 'clear' },
     einvoice: { name: 'fake-einvoice', generateIrn: async () => ({ status: 'manual_pending', irn: 'FAKE-IRN-NOT-REAL', ack_no: null, ack_date: null, message: 'Mock provider' }) },
     ewayBill: { name: 'fake-ewb', generate: async () => ({ status: 'manual_pending', ewb_no: 'FAKE-EWB-NOT-REAL', message: 'Mock provider' }) },

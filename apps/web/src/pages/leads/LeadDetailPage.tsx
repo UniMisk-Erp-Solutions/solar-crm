@@ -26,7 +26,7 @@ import { acceptanceFromEvents, sourceLabel } from './leadUi';
 export default function LeadDetailPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
-  const q = useGet<LeadDetail>(id ? `/leads/${id}` : null);
+  const q = useGet<LeadDetail>(id ? `/leads/${id}` : null, undefined, { refetchInterval: 15_000 });
   if (q.isLoading) return <Page><SkeletonRows rows={5} /></Page>;
   if (q.isError || !q.data) return <Page><ErrorState message={q.error ? errorMessage(q.error) : undefined} onRetry={() => void q.refetch()} title={t('leads.d.error', 'We could not open this inquiry')} /></Page>;
   return <Detail detail={q.data} />;

@@ -157,7 +157,7 @@ describe('send pipeline — consent, window, DLT', () => {
     expect((await env.db.table('message_log').all({ lead_id: id, channel: 'call' }))[0]).toMatchObject({ status: 'sent', provider: 'call-log' });
     const mail = await send(env, id, { channel: 'email', purpose: 'promotional', template_key: 'promo_mail' });
     expect(mail.status).toBe(201);
-    expect(env.providers.calls.email.filter((m) => m.to === 'asha@example.com')).toEqual([{ to: 'asha@example.com', subject: 'Offers' }]); // staff e-mails to the owner are separate
+    expect(env.providers.calls.email.filter((m) => m.to === 'asha@example.com').map((m) => ({ to: m.to, subject: m.subject }))).toEqual([{ to: 'asha@example.com', subject: 'Offers' }]); // staff e-mails to the owner are separate
     const noEmail = await newLead(env, { mobile: '9123456780', name: 'No Mail', email: undefined, pincode: '395003' });
     expect((await send(env, noEmail, { channel: 'email', purpose: 'service', body: 'hi' })).body.error.details.reasons[0].code).toBe('NO_CONTACT');
   });

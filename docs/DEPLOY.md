@@ -59,3 +59,13 @@ Authentication > URL Configuration: Site URL = the Vercel address; add it and `<
 - PDF and Excel export load `pdfkit` and `exceljs` from npm inside the function. Try one quotation PDF and one report export after the first deploy.
 - Rate limiting keeps its counters in memory per function instance, so limits are approximate.
 - Built-in checks done on the live project: health in live mode, sign-in and /auth/me, a list read, an Excel export, CORS, and the per-minute scheduler call (HTTP 200). PDF generation was verified inside the Supabase runtime with a test document.
+
+## E-mail to distributors (accept / decline from the inbox)
+
+When a person picks distributors for an inquiry, each one gets an e-mail with **Review and accept** and **Decline** buttons. The buttons open `/lead-request/<signed token>` in the web app; nothing changes until the distributor presses the confirm button there. The first to accept gets the lead, and the lead page refreshes itself every 15 seconds.
+
+```
+npx supabase secrets set EMAIL_PROVIDER=resend RESEND_API_KEY=<key> --project-ref <ref>
+```
+
+`FILE_TOKEN_SECRET` signs the links, so keep it fixed. Resend's test sender `onboarding@resend.dev` delivers only to the Resend account owner's address; to e-mail real distributors, verify a domain at resend.com/domains and set `EMAIL_FROM` to an address on it.

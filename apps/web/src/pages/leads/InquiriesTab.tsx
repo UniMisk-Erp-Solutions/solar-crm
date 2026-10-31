@@ -23,7 +23,7 @@ export function InquiriesTab({ newOpen, setNewOpen }: { newOpen: boolean; setNew
   const nav = useNavigate();
   const [f, setF] = useUrlState({ show: 'all', q: '' });
   const pill = INQUIRY_PILLS.find((p) => p.value === f.show) ?? INQUIRY_PILLS[0]!;
-  const list = useList<LeadListItem>('/leads', { status: pill.status, sla_state: pill.sla_state, q: f.q || undefined, sort: 'created_at', order: 'desc', limit: 50 });
+  const list = useList<LeadListItem>('/leads', { status: pill.status, sla_state: pill.sla_state, q: f.q || undefined, sort: 'created_at', order: 'desc', limit: 50 }, { refetchInterval: 20_000 });
   // "Awaiting acceptance" is the assigned inquiries that are still inside their window; the missed ones are in the loop box.
   const rows = f.show === 'awaiting' ? list.data?.data.filter((l) => l.sla_state !== 'breached') : list.data?.data;
 
